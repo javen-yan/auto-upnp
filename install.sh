@@ -21,6 +21,8 @@ CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 BIN_DIR="/usr/local/bin"
 BINARY_NAME="auto-upnp"
 BINARY_PATH="${BIN_DIR}/${BINARY_NAME}"
+USE_PROXY=${USE_PROXY:-false}
+PROXY=${PROXY:-"https://ghfast.top"}
 
 # 日志函数
 log_info() {
@@ -103,7 +105,11 @@ download_binary() {
     log_step "下载二进制文件..."
     
     # 构建下载URL
-    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${OS}-${ARCH}"
+    if [ "$USE_PROXY" = true ]; then
+        DOWNLOAD_URL="${PROXY}/https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${OS}-${ARCH}"
+    else
+        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${OS}-${ARCH}"
+    fi
     
     log_info "下载地址: ${DOWNLOAD_URL}"
     
