@@ -50,6 +50,16 @@ check_root() {
     fi
 }
 
+# 显示代理配置
+show_proxy_config() {
+    log_step "代理配置信息..."
+    log_info "USE_PROXY: ${USE_PROXY}"
+    if [ "$USE_PROXY" = true ]; then
+        log_info "PROXY: ${PROXY}"
+    fi
+    echo
+}
+
 # 检测系统平台
 detect_platform() {
     # 检测操作系统类型
@@ -107,11 +117,11 @@ download_binary() {
     # 构建下载URL
     if [ "$USE_PROXY" = true ]; then
         DOWNLOAD_URL="${PROXY}/https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${OS}-${ARCH}"
+        log_info "使用代理下载: ${DOWNLOAD_URL}"
     else
         DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${OS}-${ARCH}"
+        log_info "直接下载: ${DOWNLOAD_URL}"
     fi
-    
-    log_info "下载地址: ${DOWNLOAD_URL}"
     
     # 创建临时目录
     TEMP_DIR=$(mktemp -d)
@@ -339,6 +349,9 @@ main() {
     # 检查root权限
     check_root
     
+    # 显示代理配置
+    show_proxy_config
+    
     # 检测系统平台
     detect_platform
     
@@ -434,9 +447,15 @@ case "${1:-}" in
         echo "  --uninstall, -u    卸载服务"
         echo "  --help, -h         显示帮助信息"
         echo
+        echo "环境变量:"
+        echo "  USE_PROXY          是否使用代理 (true/false, 默认: false)"
+        echo "  PROXY              代理服务器地址 (默认: https://ghfast.top)"
+        echo
         echo "示例:"
-        echo "  sudo $0              # 安装服务"
-        echo "  sudo $0 --uninstall  # 卸载服务"
+        echo "  sudo $0                                    # 安装服务"
+        echo "  sudo USE_PROXY=true $0                     # 使用代理安装"
+        echo "  sudo USE_PROXY=true PROXY=https://ghproxy.com $0  # 使用自定义代理"
+        echo "  sudo $0 --uninstall                        # 卸载服务"
         ;;
     "")
         main
