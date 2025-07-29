@@ -1,0 +1,393 @@
+#!/bin/bash
+
+# 自动UPnP服务安装脚本
+# 支持从GitHub下载release版本并配置systemd服务
+
+set -e
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 配置变量
+GITHUB_REPO="javen-yan/auto-upnp"  # 需要替换为实际的GitHub仓库
+SERVICE_NAME="auto-upnp"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+CONFIG_DIR="/etc/auto-upnp"
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+BIN_DIR="/usr/local/bin"
+BINARY_NAME="auto-upnp"
+BINARY_PATH="${BIN_DIR}/${BINARY_NAME}"
+
+# 日志函数
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_step() {
+    echo -e "${BLUE}[STEP]${NC} $1"
+}
+
+# 检查是否为root用户
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        log_error "此脚本需要root权限运行"
+        log_info "请使用: sudo $0"
+        exit 1
+    fi
+}
+
+# 检测系统架构
+detect_arch() {
+    case "$(uname -m)" in
+        x86_64)
+            ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            ARCH="arm64"
+            ;;
+        armv7l)
+            ARCH="armv7"
+            ;;
+        *)
+            log_error "不支持的架构: $(uname -m)"
+            exit 1
+            ;;
+    esac
+}
+
+# 获取最新版本
+get_latest_version() {
+    log_step "获取最新版本信息..."
+    
+    # 使用GitHub API获取最新版本
+    LATEST_VERSION=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    
+    if [[ -z "$LATEST_VERSION" ]]; then
+        log_error "无法获取最新版本信息"
+        log_info "请检查网络连接或手动指定版本"
+        exit 1
+    fi
+    
+    log_info "最新版本: ${LATEST_VERSION}"
+}
+
+# 下载二进制文件
+download_binary() {
+    log_step "下载二进制文件..."
+    
+    # 构建下载URL
+    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${ARCH}"
+    
+    log_info "下载地址: ${DOWNLOAD_URL}"
+    
+    # 创建临时目录
+    TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
+    
+    # 下载文件
+    if ! curl -L -o "${BINARY_NAME}" "$DOWNLOAD_URL"; then
+        log_error "下载失败"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    
+    # 检查文件是否下载成功
+    if [[ ! -f "${BINARY_NAME}" ]]; then
+        log_error "下载的文件不存在"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    
+    # 设置执行权限
+    chmod +x "${BINARY_NAME}"
+    
+    log_info "下载完成"
+}
+
+# 安装二进制文件
+install_binary() {
+    log_step "安装二进制文件..."
+    
+    # 创建目标目录
+    mkdir -p "$BIN_DIR"
+    
+    # 备份现有文件
+    if [[ -f "$BINARY_PATH" ]]; then
+        log_warn "发现现有二进制文件，创建备份"
+        mv "$BINARY_PATH" "${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    # 移动文件
+    mv "${TEMP_DIR}/${BINARY_NAME}" "$BINARY_PATH"
+    
+    # 清理临时目录
+    rm -rf "$TEMP_DIR"
+    
+    log_info "二进制文件安装完成: ${BINARY_PATH}"
+}
+
+# 生成默认配置文件
+generate_config() {
+    log_step "生成默认配置文件..."
+    
+    # 创建配置目录
+    mkdir -p "$CONFIG_DIR"
+    
+    # 备份现有配置文件
+    if [[ -f "$CONFIG_FILE" ]]; then
+        log_warn "发现现有配置文件，创建备份"
+        mv "$CONFIG_FILE" "${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    # 生成默认配置文件
+    cat > "$CONFIG_FILE" << 'EOF'
+# 自动UPnP服务配置文件
+
+# 端口监听范围配置
+port_range:
+  start: 8000      # 起始端口
+  end: 9000        # 结束端口
+  step: 1          # 端口间隔
+
+# UPnP配置
+upnp:
+  discovery_timeout: 10s    # 设备发现超时时间
+  mapping_duration: 1h      # 端口映射持续时间，0表示永久
+  retry_attempts: 3         # 重试次数
+  retry_delay: 5s           # 重试延迟
+
+# 网络接口配置
+network:
+  preferred_interfaces: ["eth0", "wlan0"]  # 优先使用的网络接口
+  exclude_interfaces: ["lo", "docker"]     # 排除的网络接口
+
+# 日志配置
+log:
+  level: "info"
+  format: "json"
+  file: "/var/log/auto-upnp.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+# 监控配置
+monitor:
+  check_interval: 30s       # 端口状态检查间隔
+  cleanup_interval: 5m      # 清理无效映射间隔
+  max_mappings: 100         # 最大端口映射数量
+EOF
+
+    # 设置配置文件权限
+    chmod 644 "$CONFIG_FILE"
+    
+    log_info "配置文件生成完成: ${CONFIG_FILE}"
+}
+
+# 生成systemd服务文件
+generate_service() {
+    log_step "生成systemd服务文件..."
+    
+    # 备份现有服务文件
+    if [[ -f "$SERVICE_FILE" ]]; then
+        log_warn "发现现有服务文件，创建备份"
+        mv "$SERVICE_FILE" "${SERVICE_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    # 生成服务文件
+    cat > "$SERVICE_FILE" << EOF
+[Unit]
+Description=Auto UPnP Service
+Documentation=https://github.com/${GITHUB_REPO}
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=${BINARY_PATH} -config ${CONFIG_FILE}
+ExecReload=/bin/kill -HUP \$MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auto-upnp
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=${CONFIG_DIR} /var/log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # 重新加载systemd
+    systemctl daemon-reload
+    
+    log_info "服务文件生成完成: ${SERVICE_FILE}"
+}
+
+# 创建日志目录
+setup_logging() {
+    log_step "设置日志目录..."
+    
+    # 创建日志目录
+    mkdir -p /var/log
+    touch /var/log/auto-upnp.log
+    chmod 644 /var/log/auto-upnp.log
+    
+    log_info "日志目录设置完成"
+}
+
+# 显示安装完成信息
+show_completion_info() {
+    echo
+    log_info "=== 安装完成 ==="
+    echo
+    log_info "二进制文件: ${BINARY_PATH}"
+    log_info "配置文件: ${CONFIG_FILE}"
+    log_info "服务文件: ${SERVICE_FILE}"
+    log_info "日志文件: /var/log/auto-upnp.log"
+    echo
+    log_warn "请编辑配置文件: ${CONFIG_FILE}"
+    log_info "配置文件说明:"
+    echo "  - port_range: 设置要监控的端口范围"
+    echo "  - upnp: UPnP相关配置"
+    echo "  - network: 网络接口配置"
+    echo "  - log: 日志配置"
+    echo "  - monitor: 监控配置"
+    echo
+    log_info "服务管理命令:"
+    echo "  启动服务: systemctl start ${SERVICE_NAME}"
+    echo "  停止服务: systemctl stop ${SERVICE_NAME}"
+    echo "  重启服务: systemctl restart ${SERVICE_NAME}"
+    echo "  查看状态: systemctl status ${SERVICE_NAME}"
+    echo "  查看日志: journalctl -u ${SERVICE_NAME} -f"
+    echo "  开机自启: systemctl enable ${SERVICE_NAME}"
+    echo "  禁用自启: systemctl disable ${SERVICE_NAME}"
+    echo
+    log_info "测试命令:"
+    echo "  测试配置: ${BINARY_PATH} -config ${CONFIG_FILE} -test"
+    echo "  查看帮助: ${BINARY_PATH} -help"
+    echo
+}
+
+# 主安装流程
+main() {
+    echo "=========================================="
+    echo "        自动UPnP服务安装脚本"
+    echo "=========================================="
+    echo
+    
+    # 检查root权限
+    check_root
+    
+    # 检测系统架构
+    detect_arch
+    log_info "检测到架构: ${ARCH}"
+    
+    # 获取最新版本
+    get_latest_version
+    
+    # 下载二进制文件
+    download_binary
+    
+    # 安装二进制文件
+    install_binary
+    
+    # 生成配置文件
+    generate_config
+    
+    # 生成服务文件
+    generate_service
+    
+    # 设置日志
+    setup_logging
+    
+    # 显示完成信息
+    show_completion_info
+    
+    log_info "安装完成！"
+}
+
+# 卸载函数
+uninstall() {
+    log_step "开始卸载自动UPnP服务..."
+    
+    # 停止并禁用服务
+    if systemctl is-active --quiet "${SERVICE_NAME}"; then
+        log_info "停止服务..."
+        systemctl stop "${SERVICE_NAME}"
+    fi
+    
+    if systemctl is-enabled --quiet "${SERVICE_NAME}"; then
+        log_info "禁用服务..."
+        systemctl disable "${SERVICE_NAME}"
+    fi
+    
+    # 删除服务文件
+    if [[ -f "$SERVICE_FILE" ]]; then
+        log_info "删除服务文件..."
+        rm -f "$SERVICE_FILE"
+        systemctl daemon-reload
+    fi
+    
+    # 删除二进制文件
+    if [[ -f "$BINARY_PATH" ]]; then
+        log_info "删除二进制文件..."
+        rm -f "$BINARY_PATH"
+    fi
+    
+    # 删除配置文件（可选）
+    if [[ -d "$CONFIG_DIR" ]]; then
+        log_warn "配置文件目录: ${CONFIG_DIR}"
+        read -p "是否删除配置文件目录？(y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf "$CONFIG_DIR"
+            log_info "配置文件目录已删除"
+        fi
+    fi
+    
+    log_info "卸载完成！"
+}
+
+# 检查参数
+case "${1:-}" in
+    --uninstall|-u)
+        check_root
+        uninstall
+        ;;
+    --help|-h)
+        echo "用法: $0 [选项]"
+        echo "选项:"
+        echo "  --uninstall, -u    卸载服务"
+        echo "  --help, -h         显示帮助信息"
+        echo
+        echo "示例:"
+        echo "  sudo $0              # 安装服务"
+        echo "  sudo $0 --uninstall  # 卸载服务"
+        ;;
+    "")
+        main
+        ;;
+    *)
+        log_error "未知参数: $1"
+        echo "使用 --help 查看帮助信息"
+        exit 1
+        ;;
+esac 

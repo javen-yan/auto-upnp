@@ -20,6 +20,26 @@
 
 ## 安装
 
+### 方法1：使用安装脚本（推荐）
+
+```bash
+# 下载并运行安装脚本
+curl -fsSL https://raw.githubusercontent.com/your-username/auto-upnp/main/install.sh | sudo bash
+
+# 或者先下载再运行
+wget https://raw.githubusercontent.com/your-username/auto-upnp/main/install.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+安装脚本会自动：
+- 从GitHub下载最新的release版本
+- 生成默认配置文件到 `/etc/auto-upnp/config.yaml`
+- 创建systemd服务文件
+- 设置日志目录
+
+### 方法2：手动安装
+
 1. 克隆项目：
 ```bash
 git clone <repository-url>
@@ -32,9 +52,34 @@ go mod tidy
 ```
 
 3. 编译项目：
+
+### 方法1：静态编译（推荐，解决GLIBC版本问题）
+```bash
+# 使用构建脚本
+./build-static.sh
+
+# 或手动构建
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o auto-upnp-static cmd/main.go
+```
+
+### 方法2：使用Makefile
+```bash
+# 静态构建
+make build-static
+
+# 兼容版本构建
+make build-compatible
+
+# 构建所有平台
+make build-all
+```
+
+### 方法3：普通构建
 ```bash
 go build -o auto-upnp cmd/main.go
 ```
+
+**注意**：如果遇到GLIBC版本问题，请使用静态编译方法。
 
 ## 配置
 
@@ -76,20 +121,57 @@ monitor:
 
 ## 使用方法
 
-### 基本使用
+### 服务管理（使用安装脚本安装后）
 
 ```bash
+# 启动服务
+sudo systemctl start auto-upnp
+
+# 停止服务
+sudo systemctl stop auto-upnp
+
+# 重启服务
+sudo systemctl restart auto-upnp
+
+# 查看服务状态
+sudo systemctl status auto-upnp
+
+# 查看实时日志
+sudo journalctl -u auto-upnp -f
+
+# 开机自启动
+sudo systemctl enable auto-upnp
+
+# 禁用开机自启动
+sudo systemctl disable auto-upnp
+```
+
+### 手动运行
+
+```bash
+# 使用静态编译的版本（推荐）
+./auto-upnp-static
+
 # 使用默认配置文件启动
-./auto-upnp
+./auto-upnp-static -config config.yaml
 
 # 指定配置文件
-./auto-upnp -config /path/to/config.yaml
+./auto-upnp-static -config /path/to/config.yaml
 
 # 设置日志级别
-./auto-upnp -log-level debug
+./auto-upnp-static -log-level debug
 
 # 显示帮助信息
-./auto-upnp -help
+./auto-upnp-static -help
+```
+
+### 使用Makefile运行
+```bash
+# 构建并运行静态版本
+make run-static
+
+# 构建并运行调试版本
+make run-debug
 ```
 
 ### 命令行选项
@@ -140,32 +222,89 @@ auto-upnp/
 - 错误和警告信息
 - 定期状态报告
 
+## 卸载
+
+### 使用安装脚本卸载
+
+```bash
+# 卸载服务
+sudo ./install.sh --uninstall
+
+# 或使用短选项
+sudo ./install.sh -u
+```
+
+卸载脚本会：
+- 停止并禁用systemd服务
+- 删除二进制文件
+- 删除systemd服务文件
+- 可选择删除配置文件目录
+
+### 手动卸载
+
+```bash
+# 停止服务
+sudo systemctl stop auto-upnp
+sudo systemctl disable auto-upnp
+
+# 删除文件
+sudo rm -f /usr/local/bin/auto-upnp
+sudo rm -f /etc/systemd/system/auto-upnp.service
+sudo rm -rf /etc/auto-upnp
+
+# 重新加载systemd
+sudo systemctl daemon-reload
+```
+
 ## 故障排除
 
 ### 常见问题
 
-1. **无法发现UPnP设备**
+1. **GLIBC版本问题**
+   ```bash
+   # 错误信息：./auto-upnp: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.34' not found
+   
+   # 解决方案：使用静态编译
+   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o auto-upnp-static cmd/main.go
+   
+   # 或使用构建脚本
+   ./build-static.sh
+   ```
+
+2. **无法发现UPnP设备**
    - 确保路由器支持UPnP功能
    - 检查防火墙设置
    - 确认网络连接正常
 
-2. **端口映射失败**
+3. **端口映射失败**
    - 检查路由器UPnP设置
    - 确认端口未被其他服务占用
    - 查看日志获取详细错误信息
 
-3. **服务无法启动**
+4. **服务无法启动**
    - 检查配置文件格式
    - 确认端口范围设置正确
    - 查看系统权限
+
+5. **构建失败**
+   - 确保Go版本 >= 1.21
+   - 检查网络连接（下载依赖）
+   - 尝试清理并重新构建：`make clean && make build-static`
+
+6. **UPnP设备发现失败**
+   - 确保路由器支持UPnP功能
+   - 检查路由器UPnP设置是否启用
+   - 确保防火墙允许UPnP通信
 
 ### 调试模式
 
 使用debug日志级别获取更详细的信息：
 
 ```bash
-./auto-upnp -log-level debug
+./auto-upnp-static -log-level debug
 ```
+
+
 
 ## 开发
 

@@ -6,6 +6,8 @@ BUILD_DIR=build
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}"
+# 静态编译标志
+STATIC_FLAGS=CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 
 # 默认目标
 .PHONY: all
@@ -19,17 +21,25 @@ build:
 	go build ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME} cmd/main.go
 	@echo "构建完成: ${BUILD_DIR}/${BINARY_NAME}"
 
+# 静态构建（解决GLIBC版本问题）
+.PHONY: build-static
+build-static:
+	@echo "静态构建 ${BINARY_NAME}..."
+	@mkdir -p ${BUILD_DIR}
+	${STATIC_FLAGS} go build ${LDFLAGS} -a -installsuffix cgo -o ${BUILD_DIR}/${BINARY_NAME}-static cmd/main.go
+	@echo "静态构建完成: ${BUILD_DIR}/${BINARY_NAME}-static"
+
 # 构建多个平台
 .PHONY: build-all
 build-all: clean
 	@echo "构建多平台版本..."
 	@mkdir -p ${BUILD_DIR}
 	
-	# Linux AMD64
-	GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME}-linux-amd64 cmd/main.go
+	# Linux AMD64 (静态)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -a -installsuffix cgo -o ${BUILD_DIR}/${BINARY_NAME}-linux-amd64 cmd/main.go
 	
-	# Linux ARM64
-	GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME}-linux-arm64 cmd/main.go
+	# Linux ARM64 (静态)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -a -installsuffix cgo -o ${BUILD_DIR}/${BINARY_NAME}-linux-arm64 cmd/main.go
 	
 	# macOS AMD64
 	GOOS=darwin GOARCH=amd64 go build ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME}-darwin-amd64 cmd/main.go
@@ -41,6 +51,14 @@ build-all: clean
 	GOOS=windows GOARCH=amd64 go build ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME}-windows-amd64.exe cmd/main.go
 	
 	@echo "多平台构建完成"
+
+# 构建兼容旧版本GLIBC的版本
+.PHONY: build-compatible
+build-compatible:
+	@echo "构建兼容旧版本GLIBC的版本..."
+	@mkdir -p ${BUILD_DIR}
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -a -installsuffix cgo -ldflags '-extldflags "-static"' -o ${BUILD_DIR}/${BINARY_NAME}-compatible cmd/main.go
+	@echo "兼容版本构建完成: ${BUILD_DIR}/${BINARY_NAME}-compatible"
 
 # 安装依赖
 .PHONY: deps
@@ -94,6 +112,12 @@ run-debug: build
 	@echo "运行服务（调试模式）..."
 	./${BUILD_DIR}/${BINARY_NAME} -log-level debug
 
+# 运行静态构建的服务
+.PHONY: run-static
+run-static: build-static
+	@echo "运行静态构建的服务..."
+	./${BUILD_DIR}/${BINARY_NAME}-static
+
 # 创建发布包
 .PHONY: release
 release: build-all
@@ -108,9 +132,9 @@ release: build-all
 
 # 安装到系统
 .PHONY: install
-install: build
+install: build-static
 	@echo "安装到系统..."
-	sudo cp ${BUILD_DIR}/${BINARY_NAME} /usr/local/bin/
+	sudo cp ${BUILD_DIR}/${BINARY_NAME}-static /usr/local/bin/${BINARY_NAME}
 	@echo "安装完成"
 
 # 卸载
@@ -125,6 +149,8 @@ uninstall:
 help:
 	@echo "可用的目标:"
 	@echo "  build          - 构建项目"
+	@echo "  build-static   - 静态构建（解决GLIBC版本问题）"
+	@echo "  build-compatible - 构建兼容旧版本GLIBC的版本"
 	@echo "  build-all      - 构建多平台版本"
 	@echo "  deps           - 安装依赖"
 	@echo "  test           - 运行测试"
@@ -134,6 +160,7 @@ help:
 	@echo "  clean          - 清理构建文件"
 	@echo "  run            - 运行服务"
 	@echo "  run-debug      - 运行服务（调试模式）"
+	@echo "  run-static     - 运行静态构建的服务"
 	@echo "  release        - 创建发布包"
 	@echo "  install        - 安装到系统"
 	@echo "  uninstall      - 卸载"
