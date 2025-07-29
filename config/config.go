@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/viper"
@@ -116,7 +118,7 @@ func setDefaults() {
 	viper.SetDefault("admin.host", "0.0.0.0")
 	viper.SetDefault("admin.username", "admin")
 	viper.SetDefault("admin.password", "admin")
-	viper.SetDefault("admin.data_dir", "data")
+	viper.SetDefault("admin.data_dir", getDefaultDataDir())
 }
 
 // GetPortRange 获取端口范围列表
@@ -136,4 +138,22 @@ func (c *Config) GetPortPairs() [][2]int {
 		pairs[i] = [2]int{port, port}
 	}
 	return pairs
+}
+
+// getDefaultDataDir 获取默认数据目录
+func getDefaultDataDir() string {
+	// 尝试用户主目录
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		dataDir := filepath.Join(homeDir, ".auto-upnp", "data")
+		return dataDir
+	}
+
+	// 如果无法获取用户主目录，使用当前工作目录
+	if workDir, err := os.Getwd(); err == nil {
+		dataDir := filepath.Join(workDir, "data")
+		return dataDir
+	}
+
+	// 最后的回退方案
+	return "data"
 }

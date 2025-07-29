@@ -34,6 +34,21 @@ func NewManualMappingManager(dataDir string, logger *logrus.Logger) *ManualMappi
 		dataDir = "."
 	}
 
+	// 检查目录权限并尝试创建
+	if err := ensureDataDir(dataDir, logger); err != nil {
+		logger.WithError(err).Warnf("无法使用配置的数据目录 %s，将使用备用目录", dataDir)
+		// 使用备用目录
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			dataDir = filepath.Join(homeDir, ".auto-upnp", "data")
+		} else {
+			dataDir = "data"
+		}
+		// 再次尝试创建备用目录
+		if err := ensureDataDir(dataDir, logger); err != nil {
+			logger.WithError(err).Error("无法创建任何数据目录")
+		}
+	}
+
 	filePath := filepath.Join(dataDir, "manual_mappings.json")
 
 	return &ManualMappingManager{
@@ -43,16 +58,30 @@ func NewManualMappingManager(dataDir string, logger *logrus.Logger) *ManualMappi
 	}
 }
 
+// ensureDataDir 确保数据目录存在且有写权限
+func ensureDataDir(dataDir string, logger *logrus.Logger) error {
+	// 创建目录
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+
+	// 测试写权限
+	testFile := filepath.Join(dataDir, ".test_write")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		return fmt.Errorf("目录无写权限: %w", err)
+	}
+
+	// 清理测试文件
+	os.Remove(testFile)
+
+	logger.Infof("使用数据目录: %s", dataDir)
+	return nil
+}
+
 // LoadMappings 从文件加载手动映射
 func (mm *ManualMappingManager) LoadMappings() error {
 	mm.mutex.Lock()
 	defer mm.mutex.Unlock()
-
-	// 确保目录存在
-	dir := filepath.Dir(mm.filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
-	}
 
 	// 检查文件是否存在
 	if _, err := os.Stat(mm.filePath); os.IsNotExist(err) {
