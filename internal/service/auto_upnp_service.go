@@ -15,16 +15,17 @@ import (
 
 // AutoUPnPService 自动UPnP服务
 type AutoUPnPService struct {
-	config         *config.Config
-	logger         *logrus.Logger
-	portMonitor    *portmonitor.PortMonitor
-	upnpManager    *upnp.UPnPManager
-	manualManager  *ManualMappingManager
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	activeMappings map[int]bool
-	mappingMutex   sync.RWMutex
+	config            *config.Config
+	logger            *logrus.Logger
+	autoPortMonitor   *portmonitor.AutoPortMonitor
+	manualPortMonitor *portmonitor.ManualPortMonitor
+	upnpManager       *upnp.UPnPManager
+	manualManager     *ManualMappingManager
+	ctx               context.Context
+	cancel            context.CancelFunc
+	wg                sync.WaitGroup
+	activeMappings    map[int]bool
+	mappingMutex      sync.RWMutex
 }
 
 // NewAutoUPnPService 创建新的自动UPnP服务
@@ -65,20 +66,35 @@ func (as *AutoUPnPService) Start() error {
 		// 不返回错误，继续运行服务
 	}
 
-	// 初始化端口监控器
-	portConfig := &portmonitor.Config{
+	timeout := as.config.Monitor.CheckInterval
+
+	// 初始化自动端口监控器
+	autoPortConfig := &portmonitor.Config{
 		CheckInterval: as.config.Monitor.CheckInterval,
 		PortRange:     as.config.GetPortRange(),
-		Timeout:       5 * time.Second,
+		Timeout:       timeout,
 	}
 
-	as.portMonitor = portmonitor.NewPortMonitor(portConfig, as.logger)
+	as.autoPortMonitor = portmonitor.NewAutoPortMonitor(autoPortConfig, as.logger)
 
-	// 添加端口状态变化回调
-	as.portMonitor.AddCallback(as.onPortStatusChanged)
+	// 添加自动端口状态变化回调
+	as.autoPortMonitor.AddCallback(as.onAutoPortStatusChanged)
 
-	// 启动端口监控
-	as.portMonitor.Start()
+	// 启动自动端口监控
+	as.autoPortMonitor.Start()
+
+	// 初始化手动端口监控器
+	as.manualPortMonitor = portmonitor.NewManualPortMonitor(
+		as.config.Monitor.CheckInterval,
+		timeout,
+		as.logger,
+	)
+
+	// 添加手动端口状态变化回调
+	as.manualPortMonitor.AddCallback(as.onManualPortStatusChanged)
+
+	// 启动手动端口监控
+	as.manualPortMonitor.Start()
 
 	// 启动清理协程
 	as.wg.Add(1)
@@ -101,9 +117,14 @@ func (as *AutoUPnPService) Start() error {
 func (as *AutoUPnPService) Stop() {
 	as.logger.Info("停止自动UPnP服务")
 
-	// 停止端口监控
-	if as.portMonitor != nil {
-		as.portMonitor.Stop()
+	// 停止自动端口监控
+	if as.autoPortMonitor != nil {
+		as.autoPortMonitor.Stop()
+	}
+
+	// 停止手动端口监控
+	if as.manualPortMonitor != nil {
+		as.manualPortMonitor.Stop()
 	}
 
 	// 取消上下文
@@ -120,11 +141,62 @@ func (as *AutoUPnPService) Stop() {
 	as.logger.Info("自动UPnP服务已停止")
 }
 
-// onPortStatusChanged 端口状态变化回调
+// onAutoPortStatusChanged 自动端口状态变化回调
+func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool) {
+	as.mappingMutex.Lock()
+	defer as.mappingMutex.Unlock()
+
+	// 处理自动映射
+	if isActive {
+		// 端口变为活跃状态，添加UPnP映射
+		if !as.activeMappings[port] {
+			as.logger.WithField("port", port).Info("检测到自动端口上线，添加UPnP映射")
+
+			description := fmt.Sprintf("AutoUPnP-%d", port)
+			err := as.upnpManager.AddPortMapping(port, port, "TCP", description)
+			if err != nil {
+				as.logger.WithFields(logrus.Fields{
+					"port":  port,
+					"error": err,
+				}).Error("添加自动UPnP端口映射失败")
+				return
+			}
+
+			as.activeMappings[port] = true
+			as.logger.WithField("port", port).Info("自动UPnP端口映射添加成功")
+		}
+	} else {
+		// 端口变为非活跃状态，删除UPnP映射
+		if as.activeMappings[port] {
+			as.logger.WithField("port", port).Info("检测到自动端口下线，删除UPnP映射")
+
+			err := as.upnpManager.RemovePortMapping(port, port, "TCP")
+			if err != nil {
+				as.logger.WithFields(logrus.Fields{
+					"port":  port,
+					"error": err,
+				}).Error("删除自动UPnP端口映射失败")
+				return
+			}
+
+			delete(as.activeMappings, port)
+			as.logger.WithField("port", port).Info("自动UPnP端口映射删除成功")
+		}
+	}
+}
+
+// onManualPortStatusChanged 手动端口状态变化回调
+func (as *AutoUPnPService) onManualPortStatusChanged(port int, isActive bool, protocol string) {
+	// 处理手动映射的激活状态
+	as.handleManualMappingStatus(port, isActive)
+}
+
+// onPortStatusChanged 端口状态变化回调（保持兼容性）
 func (as *AutoUPnPService) onPortStatusChanged(port int, isActive bool) {
 	as.mappingMutex.Lock()
 	defer as.mappingMutex.Unlock()
 
+	// 处理自动映射
 	if isActive {
 		// 端口变为活跃状态，添加UPnP映射
 		if !as.activeMappings[port] {
@@ -161,6 +233,95 @@ func (as *AutoUPnPService) onPortStatusChanged(port int, isActive bool) {
 			as.logger.WithField("port", port).Info("UPnP端口映射删除成功")
 		}
 	}
+
+	// 处理手动映射的激活状态
+	as.handleManualMappingStatus(port, isActive)
+}
+
+// handleManualMappingStatus 处理手动映射的状态变化
+func (as *AutoUPnPService) handleManualMappingStatus(port int, isActive bool) {
+	// 获取所有手动映射
+	manualMappings := as.manualManager.GetMappings()
+
+	for _, mapping := range manualMappings {
+		if mapping.InternalPort == port {
+			// 更新映射的激活状态
+			err := as.manualManager.UpdateMappingActiveStatus(
+				mapping.InternalPort,
+				mapping.ExternalPort,
+				mapping.Protocol,
+				isActive,
+			)
+
+			if err != nil {
+				as.logger.WithFields(logrus.Fields{
+					"port":    port,
+					"mapping": mapping,
+					"error":   err,
+				}).Error("更新手动映射激活状态失败")
+				continue
+			}
+
+			// 如果端口上线且映射之前是非激活状态，尝试重新注册UPnP映射
+			if isActive && !mapping.Active {
+				as.logger.WithFields(logrus.Fields{
+					"internal_port": mapping.InternalPort,
+					"external_port": mapping.ExternalPort,
+					"protocol":      mapping.Protocol,
+				}).Info("手动映射端口恢复，重新注册UPnP映射")
+
+				err := as.upnpManager.AddPortMapping(
+					mapping.InternalPort,
+					mapping.ExternalPort,
+					mapping.Protocol,
+					mapping.Description,
+				)
+				if err != nil {
+					as.logger.WithFields(logrus.Fields{
+						"internal_port": mapping.InternalPort,
+						"external_port": mapping.ExternalPort,
+						"protocol":      mapping.Protocol,
+						"error":         err,
+					}).Error("重新注册手动映射UPnP失败")
+				} else {
+					as.logger.WithFields(logrus.Fields{
+						"internal_port": mapping.InternalPort,
+						"external_port": mapping.ExternalPort,
+						"protocol":      mapping.Protocol,
+					}).Info("手动映射UPnP重新注册成功")
+				}
+			}
+
+			// 如果端口下线且映射之前是激活状态，取消UPnP映射
+			if !isActive && mapping.Active {
+				as.logger.WithFields(logrus.Fields{
+					"internal_port": mapping.InternalPort,
+					"external_port": mapping.ExternalPort,
+					"protocol":      mapping.Protocol,
+				}).Info("手动映射端口下线，取消UPnP映射")
+
+				err := as.upnpManager.RemovePortMapping(
+					mapping.InternalPort,
+					mapping.ExternalPort,
+					mapping.Protocol,
+				)
+				if err != nil {
+					as.logger.WithFields(logrus.Fields{
+						"internal_port": mapping.InternalPort,
+						"external_port": mapping.ExternalPort,
+						"protocol":      mapping.Protocol,
+						"error":         err,
+					}).Error("取消手动映射UPnP失败")
+				} else {
+					as.logger.WithFields(logrus.Fields{
+						"internal_port": mapping.InternalPort,
+						"external_port": mapping.ExternalPort,
+						"protocol":      mapping.Protocol,
+					}).Info("手动映射UPnP取消成功")
+				}
+			}
+		}
+	}
 }
 
 // cleanupRoutine 清理协程
@@ -193,9 +354,9 @@ func (as *AutoUPnPService) cleanupExpiredMappings() {
 
 	for port := range as.activeMappings {
 		// 检查端口是否仍然活跃
-		status, exists := as.portMonitor.GetPortStatus(port)
+		status, exists := as.autoPortMonitor.GetPortStatus(port)
 		if !exists || !status.IsActive {
-			as.logger.WithField("port", port).Info("清理非活跃的端口映射记录")
+			as.logger.WithField("port", port).Info("清理非活跃的自动端口映射记录")
 			delete(as.activeMappings, port)
 		}
 	}
@@ -215,7 +376,7 @@ func (as *AutoUPnPService) upnpRetryRoutine() {
 			return
 		case <-ticker.C:
 			// 检查是否有活跃的端口映射需要处理
-			activePorts := as.portMonitor.GetActivePorts()
+			activePorts := as.autoPortMonitor.GetActivePorts()
 			if len(activePorts) > 0 {
 				as.logger.Info("检测到活跃端口，尝试重新发现UPnP设备")
 				if err := as.upnpManager.Discover(); err != nil {
@@ -234,16 +395,16 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 	defer as.mappingMutex.RUnlock()
 
 	// 获取端口状态
-	var portStatus map[int]*portmonitor.PortStatus
+	var autoPortStatus map[int]*portmonitor.AutoPortStatus
 	var activePorts []int
 	var inactivePorts []int
 
-	if as.portMonitor != nil {
-		portStatus = as.portMonitor.GetAllPortStatus()
-		activePorts = as.portMonitor.GetActivePorts()
-		inactivePorts = as.portMonitor.GetInactivePorts()
+	if as.autoPortMonitor != nil {
+		autoPortStatus = as.autoPortMonitor.GetAllPortStatus()
+		activePorts = as.autoPortMonitor.GetActivePorts()
+		inactivePorts = as.autoPortMonitor.GetInactivePorts()
 	} else {
-		portStatus = make(map[int]*portmonitor.PortStatus)
+		autoPortStatus = make(map[int]*portmonitor.AutoPortStatus)
 		activePorts = []int{}
 		inactivePorts = []int{}
 	}
@@ -264,10 +425,16 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 
 	// 获取手动映射信息
 	var manualMappings []*ManualMapping
+	var activeManualMappings []*ManualMapping
+	var inactiveManualMappings []*ManualMapping
 	if as.manualManager != nil {
 		manualMappings = as.manualManager.GetMappings()
+		activeManualMappings = as.manualManager.GetActiveMappings()
+		inactiveManualMappings = as.manualManager.GetInactiveMappings()
 	} else {
 		manualMappings = []*ManualMapping{}
+		activeManualMappings = []*ManualMapping{}
+		inactiveManualMappings = []*ManualMapping{}
 	}
 
 	// 获取UPnP客户端数量
@@ -286,7 +453,7 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 			"step":  as.config.PortRange.Step,
 		},
 		"port_status": map[string]interface{}{
-			"total_ports":         len(portStatus),
+			"total_ports":         len(autoPortStatus),
 			"active_ports":        len(activePorts),
 			"inactive_ports":      len(inactivePorts),
 			"active_ports_list":   activePorts,
@@ -298,8 +465,12 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 			"mappings":        upnpMappings,
 		},
 		"manual_mappings": map[string]interface{}{
-			"total_mappings": len(manualMappings),
-			"mappings":       manualMappings,
+			"total_mappings":         len(manualMappings),
+			"active_mappings":        len(activeManualMappings),
+			"inactive_mappings":      len(inactiveManualMappings),
+			"mappings":               manualMappings,
+			"active_mappings_list":   activeManualMappings,
+			"inactive_mappings_list": inactiveManualMappings,
 		},
 		"upnp_status": map[string]interface{}{
 			"client_count": upnpClientCount,
@@ -333,23 +504,60 @@ func (as *AutoUPnPService) restoreManualMappings() error {
 
 	// 恢复每个映射
 	for _, mapping := range mappings {
-		if err := as.upnpManager.AddPortMapping(
+		// 检查端口当前状态
+		var isPortActive bool
+		if as.manualPortMonitor != nil {
+			status, exists := as.manualPortMonitor.GetPortStatus(mapping.InternalPort)
+			isPortActive = exists && status.IsActive
+		}
+
+		// 更新映射的激活状态
+		if err := as.manualManager.UpdateMappingActiveStatus(
 			mapping.InternalPort,
 			mapping.ExternalPort,
 			mapping.Protocol,
-			mapping.Description,
+			isPortActive,
 		); err != nil {
 			as.logger.WithError(err).WithFields(logrus.Fields{
 				"internal_port": mapping.InternalPort,
 				"external_port": mapping.ExternalPort,
 				"protocol":      mapping.Protocol,
-			}).Warn("恢复手动映射失败")
+			}).Warn("更新手动映射激活状态失败")
+		}
+
+		// 添加到手动端口监控器
+		if as.manualPortMonitor != nil {
+			as.manualPortMonitor.AddPort(mapping.InternalPort, mapping.Protocol)
+		}
+
+		// 只有当端口活跃时才注册UPnP映射
+		if isPortActive {
+			if err := as.upnpManager.AddPortMapping(
+				mapping.InternalPort,
+				mapping.ExternalPort,
+				mapping.Protocol,
+				mapping.Description,
+			); err != nil {
+				as.logger.WithError(err).WithFields(logrus.Fields{
+					"internal_port": mapping.InternalPort,
+					"external_port": mapping.ExternalPort,
+					"protocol":      mapping.Protocol,
+				}).Warn("恢复手动映射UPnP失败")
+			} else {
+				as.logger.WithFields(logrus.Fields{
+					"internal_port": mapping.InternalPort,
+					"external_port": mapping.ExternalPort,
+					"protocol":      mapping.Protocol,
+					"active":        isPortActive,
+				}).Info("成功恢复手动映射")
+			}
 		} else {
 			as.logger.WithFields(logrus.Fields{
 				"internal_port": mapping.InternalPort,
 				"external_port": mapping.ExternalPort,
 				"protocol":      mapping.Protocol,
-			}).Info("成功恢复手动映射")
+				"active":        isPortActive,
+			}).Info("手动映射端口非活跃，等待端口上线")
 		}
 	}
 
@@ -362,24 +570,76 @@ func (as *AutoUPnPService) AddManualMapping(internalPort, externalPort int, prot
 		description = fmt.Sprintf("Manual-%d", internalPort)
 	}
 
-	// 添加到UPnP管理器
-	if err := as.upnpManager.AddPortMapping(internalPort, externalPort, protocol, description); err != nil {
+	// 检查端口当前状态
+	var isPortActive bool
+	if as.manualPortMonitor != nil {
+		status, exists := as.manualPortMonitor.GetPortStatus(internalPort)
+		isPortActive = exists && status.IsActive
+	}
+
+	// 保存到手动映射管理器（包含激活状态）
+	if err := as.manualManager.AddMapping(internalPort, externalPort, protocol, description); err != nil {
 		return err
 	}
 
-	// 保存到手动映射管理器
-	return as.manualManager.AddMapping(internalPort, externalPort, protocol, description)
+	// 更新激活状态
+	if err := as.manualManager.UpdateMappingActiveStatus(internalPort, externalPort, protocol, isPortActive); err != nil {
+		as.logger.WithError(err).Warn("更新手动映射激活状态失败")
+	}
+
+	// 添加到手动端口监控器
+	if as.manualPortMonitor != nil {
+		as.manualPortMonitor.AddPort(internalPort, protocol)
+	}
+
+	// 只有当端口活跃时才添加到UPnP管理器
+	if isPortActive {
+		if err := as.upnpManager.AddPortMapping(internalPort, externalPort, protocol, description); err != nil {
+			as.logger.WithError(err).Warn("添加UPnP映射失败，但已保存手动映射")
+			return err
+		}
+		as.logger.WithFields(logrus.Fields{
+			"internal_port": internalPort,
+			"external_port": externalPort,
+			"protocol":      protocol,
+			"active":        isPortActive,
+		}).Info("成功添加手动映射并注册UPnP")
+	} else {
+		as.logger.WithFields(logrus.Fields{
+			"internal_port": internalPort,
+			"external_port": externalPort,
+			"protocol":      protocol,
+			"active":        isPortActive,
+		}).Info("添加手动映射，等待端口上线")
+	}
+
+	return nil
 }
 
 // RemoveManualMapping 手动删除端口映射
 func (as *AutoUPnPService) RemoveManualMapping(internalPort, externalPort int, protocol string) error {
-	// 从UPnP管理器中删除
+	// 从UPnP管理器中删除（如果存在）
 	if err := as.upnpManager.RemovePortMapping(internalPort, externalPort, protocol); err != nil {
-		return err
+		as.logger.WithError(err).Warn("删除UPnP映射失败，但继续删除手动映射")
 	}
 
 	// 从手动映射管理器中删除
-	return as.manualManager.RemoveMapping(internalPort, externalPort, protocol)
+	if err := as.manualManager.RemoveMapping(internalPort, externalPort, protocol); err != nil {
+		return err
+	}
+
+	// 从手动端口监控器中移除
+	if as.manualPortMonitor != nil {
+		as.manualPortMonitor.RemovePort(internalPort)
+	}
+
+	as.logger.WithFields(logrus.Fields{
+		"internal_port": internalPort,
+		"external_port": externalPort,
+		"protocol":      protocol,
+	}).Info("成功删除手动映射")
+
+	return nil
 }
 
 // GetPortMappings 获取所有端口映射
@@ -389,18 +649,18 @@ func (as *AutoUPnPService) GetPortMappings() map[string]*upnp.PortMapping {
 
 // GetActivePorts 获取活跃端口列表
 func (as *AutoUPnPService) GetActivePorts() []int {
-	if as.portMonitor == nil {
+	if as.autoPortMonitor == nil {
 		return []int{}
 	}
-	return as.portMonitor.GetActivePorts()
+	return as.autoPortMonitor.GetActivePorts()
 }
 
 // GetInactivePorts 获取非活跃端口列表
 func (as *AutoUPnPService) GetInactivePorts() []int {
-	if as.portMonitor == nil {
+	if as.autoPortMonitor == nil {
 		return []int{}
 	}
-	return as.portMonitor.GetInactivePorts()
+	return as.autoPortMonitor.GetInactivePorts()
 }
 
 // GetManualMappings 获取手动映射列表
@@ -409,6 +669,22 @@ func (as *AutoUPnPService) GetManualMappings() []*ManualMapping {
 		return []*ManualMapping{}
 	}
 	return as.manualManager.GetMappings()
+}
+
+// GetActiveManualMappings 获取激活的手动映射列表
+func (as *AutoUPnPService) GetActiveManualMappings() []*ManualMapping {
+	if as.manualManager == nil {
+		return []*ManualMapping{}
+	}
+	return as.manualManager.GetActiveMappings()
+}
+
+// GetInactiveManualMappings 获取非激活的手动映射列表
+func (as *AutoUPnPService) GetInactiveManualMappings() []*ManualMapping {
+	if as.manualManager == nil {
+		return []*ManualMapping{}
+	}
+	return as.manualManager.GetInactiveMappings()
 }
 
 // GetUPnPClientCount 获取UPnP客户端数量

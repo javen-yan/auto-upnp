@@ -122,6 +122,66 @@ const adminHTML = `<!DOCTYPE html>
             background: #f8f9fa;
         }
         
+        .manual-mapping-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-item h4 {
+            color: #666;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .stat-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .stat-item.active .value {
+            color: #4caf50;
+        }
+        
+        .stat-item.inactive .value {
+            color: #f44336;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .status-badge.active {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+        
+        .status-badge.inactive {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .status-badge {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
         .btn {
             background: #4facfe;
             color: white;
@@ -283,9 +343,20 @@ const adminHTML = `<!DOCTYPE html>
                 </div>
             </div>
             
-            <!-- 端口映射管理 -->
+            <!-- 手动映射管理 -->
             <div class="section">
-                <h2>端口映射管理</h2>
+                <h2>手动映射管理</h2>
+                <div class="manual-mapping-stats" id="manualMappingStats">
+                    <div class="loading">加载中...</div>
+                </div>
+                <div id="manualMappingsTable">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+            
+            <!-- 自动端口映射 -->
+            <div class="section">
+                <h2>自动端口映射</h2>
                 <div id="mappingsTable">
                     <div class="loading">加载中...</div>
                 </div>
@@ -337,12 +408,14 @@ const adminHTML = `<!DOCTYPE html>
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadStatus();
+            loadManualMappings();
             loadMappings();
             loadPorts();
             
             // 设置定时刷新
             refreshInterval = setInterval(function() {
                 loadStatus();
+                loadManualMappings();
                 loadMappings();
                 loadPorts();
             }, 5000); // 每5秒刷新一次
@@ -396,6 +469,90 @@ const adminHTML = `<!DOCTYPE html>
             }
         }
         
+        // 加载手动映射
+        async function loadManualMappings() {
+            try {
+                const response = await fetch('/api/manual-mappings');
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        showMessage('认证失败，请检查用户名和密码', 'error');
+                        return;
+                    }
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+                
+                const data = await response.json();
+                
+                // 更新统计信息
+                const statsContainer = document.getElementById('manualMappingStats');
+                statsContainer.innerHTML = 
+                    '<div class="stat-item">' +
+                        '<h4>总映射数</h4>' +
+                        '<div class="value">' + (data.total_mappings || 0) + '</div>' +
+                    '</div>' +
+                    '<div class="stat-item active">' +
+                        '<h4>激活映射</h4>' +
+                        '<div class="value">' + (data.active_mappings || 0) + '</div>' +
+                    '</div>' +
+                    '<div class="stat-item inactive">' +
+                        '<h4>非激活映射</h4>' +
+                        '<div class="value">' + (data.inactive_mappings || 0) + '</div>' +
+                    '</div>';
+                
+                // 更新映射表格
+                const mappingsTable = document.getElementById('manualMappingsTable');
+                
+                if (!data.all_mappings || data.all_mappings.length === 0) {
+                    mappingsTable.innerHTML = '<p>暂无手动映射</p>';
+                    return;
+                }
+                
+                let tableHTML = 
+                    '<table class="mappings-table">' +
+                        '<thead>' +
+                            '<tr>' +
+                                '<th>内部端口</th>' +
+                                '<th>外部端口</th>' +
+                                '<th>协议</th>' +
+                                '<th>描述</th>' +
+                                '<th>激活状态</th>' +
+                                '<th>创建时间</th>' +
+                                '<th>操作</th>' +
+                            '</tr>' +
+                        '</thead>' +
+                        '<tbody>';
+                
+                data.all_mappings.forEach(mapping => {
+                    const statusClass = mapping.active ? 'active' : 'inactive';
+                    const statusText = mapping.active ? '活跃' : '非活跃';
+                    
+                    tableHTML += 
+                        '<tr>' +
+                            '<td>' + (mapping.internal_port || '-') + '</td>' +
+                            '<td>' + (mapping.external_port || '-') + '</td>' +
+                            '<td>' + (mapping.protocol || '-') + '</td>' +
+                            '<td>' + (mapping.description || '-') + '</td>' +
+                            '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
+                            '<td>' + (mapping.created_at || '-') + '</td>' +
+                            '<td>' +
+                                '<button class="btn btn-danger" onclick="removeMapping(' + (mapping.internal_port || 0) + ', ' + (mapping.external_port || 0) + ', \'' + (mapping.protocol || 'TCP') + '\')">' +
+                                    '删除' +
+                                '</button>' +
+                            '</td>' +
+                        '</tr>';
+                });
+                
+                tableHTML += '</tbody></table>';
+                mappingsTable.innerHTML = tableHTML;
+            } catch (error) {
+                console.error('加载手动映射失败:', error);
+                const mappingsTable = document.getElementById('manualMappingsTable');
+                mappingsTable.innerHTML = '<div class="error">加载手动映射失败: ' + error.message + '</div>';
+                showMessage('加载手动映射失败: ' + error.message, 'error');
+            }
+        }
+        
         // 加载端口映射
         async function loadMappings() {
             try {
@@ -426,6 +583,7 @@ const adminHTML = `<!DOCTYPE html>
                                 '<th>外部端口</th>' +
                                 '<th>协议</th>' +
                                 '<th>描述</th>' +
+                                '<th>类型</th>' +
                                 '<th>状态</th>' +
                                 '<th>操作</th>' +
                             '</tr>' +
@@ -434,13 +592,17 @@ const adminHTML = `<!DOCTYPE html>
                 
                 for (const [key, mapping] of Object.entries(mappings)) {
                     if (mapping && typeof mapping === 'object') {
+                        const statusClass = mapping.Active ? 'active' : 'inactive';
+                        const statusText = mapping.Active ? '活跃' : '非活跃';
+                        
                         tableHTML += 
                             '<tr>' +
                                 '<td>' + (mapping.InternalPort || '-') + '</td>' +
                                 '<td>' + (mapping.ExternalPort || '-') + '</td>' +
                                 '<td>' + (mapping.Protocol || '-') + '</td>' +
                                 '<td>' + (mapping.Description || '-') + '</td>' +
-                                '<td>' + (mapping.Active ? '活跃' : '非活跃') + '</td>' +
+                                '<td><span class="status-badge">自动</span></td>' +
+                                '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
                                 '<td>' +
                                     '<button class="btn btn-danger" onclick="removeMapping(' + (mapping.InternalPort || 0) + ', ' + (mapping.ExternalPort || 0) + ', \'' + (mapping.Protocol || 'TCP') + '\')">' +
                                         '删除' +
@@ -539,6 +701,7 @@ const adminHTML = `<!DOCTYPE html>
                 if (response.ok) {
                     showMessage('映射添加成功', 'success');
                     event.target.reset();
+                    loadManualMappings();
                     loadMappings();
                     loadStatus();
                 } else {
@@ -586,6 +749,7 @@ const adminHTML = `<!DOCTYPE html>
                 
                 if (response.ok) {
                     showMessage('映射删除成功', 'success');
+                    loadManualMappings();
                     loadMappings();
                     loadStatus();
                 } else {

@@ -205,8 +205,8 @@ http://localhost:8080
 - `GET /api/ports` - 获取端口状态
 - `GET /api/upnp-status` - 获取UPnP状态
 
-详细API文档请参考 [API_EXAMPLES.md](API_EXAMPLES.md)
 ```
+详细API文档请参考 [API_EXAMPLES.md](API_EXAMPLES.md)
 
 ### 使用Makefile运行
 ```bash

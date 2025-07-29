@@ -54,38 +54,6 @@ admin:
 - 用户名：admin
 - 密码：admin
 
-## API接口
-
-### 1. 获取服务状态
-```
-GET /api/status
-```
-
-### 2. 获取端口映射列表
-```
-GET /api/mappings
-```
-
-### 3. 添加端口映射
-```
-POST /api/add-mapping
-Content-Type: application/x-www-form-urlencoded
-
-internal_port=8080&external_port=8080&protocol=TCP&description=Web服务
-```
-
-### 4. 删除端口映射
-```
-POST /api/remove-mapping
-Content-Type: application/x-www-form-urlencoded
-
-internal_port=8080&external_port=8080&protocol=TCP
-```
-
-### 5. 获取端口状态
-```
-GET /api/ports
-```
 
 ## 安全特性
 

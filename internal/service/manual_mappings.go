@@ -18,6 +18,7 @@ type ManualMapping struct {
 	Protocol     string `json:"protocol"`
 	Description  string `json:"description"`
 	CreatedAt    string `json:"created_at"`
+	Active       bool   `json:"active"`
 }
 
 // ManualMappingManager 手动映射管理器
@@ -37,15 +38,11 @@ func NewManualMappingManager(dataDir string, logger *logrus.Logger) *ManualMappi
 	// 检查目录权限并尝试创建
 	if err := ensureDataDir(dataDir, logger); err != nil {
 		logger.WithError(err).Warnf("无法使用配置的数据目录 %s，将使用备用目录", dataDir)
-		// 使用备用目录
-		if homeDir, err := os.UserHomeDir(); err == nil {
-			dataDir = filepath.Join(homeDir, ".auto-upnp", "data")
-		} else {
-			dataDir = "data"
-		}
+		dataDir = "/tmp"
 		// 再次尝试创建备用目录
 		if err := ensureDataDir(dataDir, logger); err != nil {
 			logger.WithError(err).Error("无法创建任何数据目录")
+			os.Exit(1)
 		}
 	}
 
@@ -157,6 +154,7 @@ func (mm *ManualMappingManager) AddMapping(internalPort, externalPort int, proto
 		Protocol:     protocol,
 		Description:  description,
 		CreatedAt:    time.Now().Format(time.RFC3339),
+		Active:       true,
 	}
 
 	mm.mappings[key] = mapping
@@ -202,6 +200,62 @@ func (mm *ManualMappingManager) GetMapping(internalPort, externalPort int, proto
 	key := mm.getMappingKey(internalPort, externalPort, protocol)
 	mapping, exists := mm.mappings[key]
 	return mapping, exists
+}
+
+// UpdateMappingActiveStatus 更新映射的激活状态
+func (mm *ManualMappingManager) UpdateMappingActiveStatus(internalPort, externalPort int, protocol string, active bool) error {
+	mm.mutex.Lock()
+	defer mm.mutex.Unlock()
+
+	key := mm.getMappingKey(internalPort, externalPort, protocol)
+	mapping, exists := mm.mappings[key]
+	if !exists {
+		return fmt.Errorf("手动映射不存在: %s", key)
+	}
+
+	// 只有当状态发生变化时才更新
+	if mapping.Active != active {
+		mapping.Active = active
+		mm.logger.WithFields(logrus.Fields{
+			"internal_port": internalPort,
+			"external_port": externalPort,
+			"protocol":      protocol,
+			"active":        active,
+		}).Info("更新手动映射激活状态")
+
+		// 保存到文件
+		return mm.saveMappingsUnsafe()
+	}
+
+	return nil
+}
+
+// GetActiveMappings 获取所有激活的手动映射
+func (mm *ManualMappingManager) GetActiveMappings() []*ManualMapping {
+	mm.mutex.RLock()
+	defer mm.mutex.RUnlock()
+
+	mappings := make([]*ManualMapping, 0)
+	for _, mapping := range mm.mappings {
+		if mapping.Active {
+			mappings = append(mappings, mapping)
+		}
+	}
+	return mappings
+}
+
+// GetInactiveMappings 获取所有非激活的手动映射
+func (mm *ManualMappingManager) GetInactiveMappings() []*ManualMapping {
+	mm.mutex.RLock()
+	defer mm.mutex.RUnlock()
+
+	mappings := make([]*ManualMapping, 0)
+	for _, mapping := range mm.mappings {
+		if !mapping.Active {
+			mappings = append(mappings, mapping)
+		}
+	}
+	return mappings
 }
 
 // getMappingKey 生成映射键

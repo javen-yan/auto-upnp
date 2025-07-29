@@ -54,6 +54,7 @@ func (as *AdminServer) Start() error {
 	mux.HandleFunc("/", as.authMiddleware(as.handleIndex))
 	mux.HandleFunc("/api/status", as.authMiddleware(as.handleStatus))
 	mux.HandleFunc("/api/mappings", as.authMiddleware(as.handleMappings))
+	mux.HandleFunc("/api/manual-mappings", as.authMiddleware(as.handleManualMappings))
 	mux.HandleFunc("/api/add-mapping", as.authMiddleware(as.handleAddMapping))
 	mux.HandleFunc("/api/remove-mapping", as.authMiddleware(as.handleRemoveMapping))
 	mux.HandleFunc("/api/ports", as.authMiddleware(as.handlePorts))
@@ -234,6 +235,12 @@ func (as *AdminServer) handleAddMapping(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// 如果InternalPort在PortRange范围内，则返回错误
+	if req.InternalPort < as.config.PortRange.Start || req.InternalPort > as.config.PortRange.End {
+		as.writeJSONResponse(w, http.StatusBadRequest, "内部端口不在端口范围内", nil)
+		return
+	}
+
 	if req.ExternalPort <= 0 || req.ExternalPort > 65535 {
 		as.writeJSONResponse(w, http.StatusBadRequest, "外部端口格式错误", nil)
 		return
@@ -245,7 +252,7 @@ func (as *AdminServer) handleAddMapping(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if req.Description == "" {
-		req.Description = fmt.Sprintf("手动映射 %d->%d", req.InternalPort, req.ExternalPort)
+		req.Description = fmt.Sprintf("Manual %d->%d", req.InternalPort, req.ExternalPort)
 	}
 
 	// 添加映射
@@ -322,6 +329,29 @@ func (as *AdminServer) handlePorts(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"active_ports":   activePorts,
 		"inactive_ports": inactivePorts,
+	}
+
+	as.writeJSON(w, response)
+}
+
+// handleManualMappings 处理手动映射API
+func (as *AdminServer) handleManualMappings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "方法不允许", http.StatusMethodNotAllowed)
+		return
+	}
+
+	allMappings := as.autoService.GetManualMappings()
+	activeMappings := as.autoService.GetActiveManualMappings()
+	inactiveMappings := as.autoService.GetInactiveManualMappings()
+
+	response := map[string]interface{}{
+		"total_mappings":         len(allMappings),
+		"active_mappings":        len(activeMappings),
+		"inactive_mappings":      len(inactiveMappings),
+		"all_mappings":           allMappings,
+		"active_mappings_list":   activeMappings,
+		"inactive_mappings_list": inactiveMappings,
 	}
 
 	as.writeJSON(w, response)

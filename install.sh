@@ -198,7 +198,7 @@ log:
 
 # 监控配置
 monitor:
-  check_interval: 30s       # 端口状态检查间隔
+  check_interval: 10s       # 端口状态检查间隔
   cleanup_interval: 5m      # 清理无效映射间隔
   max_mappings: 100         # 最大端口映射数量
 
@@ -208,7 +208,7 @@ admin:
   username: "admin"
   password: "admin"
   host: "0.0.0.0"
-  data_dir: "data"
+  data_dir: "/var/lib/auto-upnp"
 EOF
 
     # 设置配置文件权限
@@ -252,7 +252,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=${CONFIG_DIR} /var/log
+ReadWritePaths=${CONFIG_DIR} /var/log /var/lib/auto-upnp
 
 [Install]
 WantedBy=multi-user.target
@@ -279,6 +279,14 @@ setup_logging() {
     log_info "日志目录设置完成"
 }
 
+# 创建数据目录
+setup_data_dir() {
+    log_step "创建数据目录..."
+    mkdir -p /var/lib/auto-upnp
+    chmod 755 /var/lib/auto-upnp
+    chown root:root /var/lib/auto-upnp
+}
+
 # 显示安装完成信息
 show_completion_info() {
     echo
@@ -288,6 +296,7 @@ show_completion_info() {
     log_info "配置文件: ${CONFIG_FILE}"
     log_info "服务文件: ${SERVICE_FILE}"
     log_info "日志文件: /var/log/auto-upnp.log"
+    log_info "数据目录: /var/lib/auto-upnp"
     echo
     log_warn "请编辑配置文件: ${CONFIG_FILE}"
     log_info "配置文件说明:"
@@ -296,6 +305,7 @@ show_completion_info() {
     echo "  - network: 网络接口配置"
     echo "  - log: 日志配置"
     echo "  - monitor: 监控配置"
+    echo "  - admin: 管理员配置"
     echo
     log_info "服务管理命令:"
     echo "  启动服务: systemctl start ${SERVICE_NAME}"
@@ -343,6 +353,9 @@ main() {
     
     # 设置日志
     setup_logging
+
+    # 创建数据目录
+    setup_data_dir
     
     # 显示完成信息
     show_completion_info
@@ -388,7 +401,18 @@ uninstall() {
             log_info "配置文件目录已删除"
         fi
     fi
-    
+
+    # 删除数据目录
+    if [[ -d "/var/lib/auto-upnp" ]]; then
+        log_warn "数据目录: /var/lib/auto-upnp"
+        read -p "是否删除数据目录？(y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf "/var/lib/auto-upnp"
+            log_info "数据目录已删除"
+        fi
+    fi
+
     log_info "卸载完成！"
 }
 

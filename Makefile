@@ -99,6 +99,7 @@ clean:
 	@echo "清理构建文件..."
 	rm -rf ${BUILD_DIR}
 	rm -f coverage.out coverage.html
+	rm -rf release
 
 # 运行服务
 .PHONY: run
