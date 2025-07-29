@@ -149,13 +149,15 @@ download_binary() {
 
 # 安装二进制文件
 install_binary() {
+    local skip_backup=${1:-false}
+    
     log_step "安装二进制文件..."
     
     # 创建目标目录
     mkdir -p "$BIN_DIR"
     
-    # 备份现有文件
-    if [[ -f "$BINARY_PATH" ]]; then
+    # 备份现有文件（除非跳过备份）
+    if [[ -f "$BINARY_PATH" ]] && [[ "$skip_backup" != "true" ]]; then
         log_warn "发现现有二进制文件，创建备份"
         mv "$BINARY_PATH" "${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
     fi
@@ -435,16 +437,149 @@ uninstall() {
     log_info "卸载完成！"
 }
 
+# 升级函数
+upgrade() {
+    log_step "开始升级自动UPnP服务..."
+    
+    # 检查二进制文件是否存在
+    if [[ ! -f "$BINARY_PATH" ]]; then
+        log_error "未找到现有安装的二进制文件: ${BINARY_PATH}"
+        log_info "请先运行完整安装: $0"
+        exit 1
+    fi
+    
+    # 获取当前版本
+    log_info "检查当前版本..."
+    CURRENT_VERSION=$("$BINARY_PATH" -version 2>/dev/null || echo "未知")
+    log_info "当前版本: ${CURRENT_VERSION}"
+    
+    # 检测系统平台
+    detect_platform
+    
+    # 获取最新版本
+    get_latest_version
+    
+    # 检查是否需要升级
+    if [[ "$CURRENT_VERSION" == "$LATEST_VERSION" ]]; then
+        log_info "当前已是最新版本，无需升级"
+        exit 0
+    fi
+    
+    # 检查服务是否正在运行
+    if systemctl is-active --quiet "${SERVICE_NAME}"; then
+        log_warn "服务正在运行，将停止服务进行升级..."
+        systemctl stop "${SERVICE_NAME}"
+        SERVICE_WAS_RUNNING=true
+    else
+        SERVICE_WAS_RUNNING=false
+    fi
+    
+    # 备份当前二进制文件
+    log_info "备份当前二进制文件..."
+    BACKUP_PATH="${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$BINARY_PATH" "$BACKUP_PATH"
+    log_info "备份文件: ${BACKUP_PATH}"
+    
+    # 下载新的二进制文件
+    download_binary
+    
+    # 安装新的二进制文件（跳过备份，因为已经手动备份了）
+    install_binary true
+    
+    # 验证新二进制文件
+    log_step "验证新二进制文件..."
+    if ! "$BINARY_PATH" -version >/dev/null 2>&1; then
+        log_error "新二进制文件验证失败，恢复备份..."
+        mv "$BACKUP_PATH" "$BINARY_PATH"
+        if [[ "$SERVICE_WAS_RUNNING" == true ]]; then
+            log_info "重新启动服务..."
+            systemctl start "${SERVICE_NAME}"
+        fi
+        exit 1
+    fi
+    
+    # 删除备份文件
+    rm -f "$BACKUP_PATH"
+    log_info "备份文件已删除"
+    
+    # 如果服务之前在运行，重新启动服务
+    if [[ "$SERVICE_WAS_RUNNING" == true ]]; then
+        log_info "重新启动服务..."
+        systemctl start "${SERVICE_NAME}"
+    fi
+    
+    # 显示升级完成信息
+    echo
+    log_info "=== 升级完成 ==="
+    echo
+    log_info "升级前版本: ${CURRENT_VERSION}"
+    log_info "升级后版本: ${LATEST_VERSION}"
+    log_info "新二进制文件: ${BINARY_PATH}"
+    log_info "服务状态: $(systemctl is-active ${SERVICE_NAME} 2>/dev/null || echo 'stopped')"
+    echo
+    log_info "升级命令:"
+    echo "  查看服务状态: systemctl status ${SERVICE_NAME}"
+    echo "  查看服务日志: journalctl -u ${SERVICE_NAME} -f"
+    echo "  查看文件日志: tail -f /var/log/auto-upnp.log"
+    echo
+    log_info "升级完成！"
+}
+
+# 检查更新函数
+check_update() {
+    log_step "检查自动UPnP服务更新..."
+    
+    # 检查二进制文件是否存在
+    if [[ ! -f "$BINARY_PATH" ]]; then
+        log_error "未找到现有安装的二进制文件: ${BINARY_PATH}"
+        log_info "请先运行完整安装: $0"
+        exit 1
+    fi
+    
+    # 获取当前版本
+    log_info "检查当前版本..."
+    CURRENT_VERSION=$("$BINARY_PATH" -version 2>/dev/null || echo "未知")
+    log_info "当前版本: ${CURRENT_VERSION}"
+    
+    # 检测系统平台
+    detect_platform
+    
+    # 获取最新版本
+    get_latest_version
+    
+    # 比较版本
+    if [[ "$CURRENT_VERSION" == "$LATEST_VERSION" ]]; then
+        log_info "当前已是最新版本: ${LATEST_VERSION}"
+    else
+        log_warn "发现新版本: ${LATEST_VERSION}"
+        log_info "当前版本: ${CURRENT_VERSION}"
+        log_info "运行以下命令进行升级:"
+        echo "  sudo $0 --upgrade"
+        if [[ "$USE_PROXY" == "true" ]]; then
+            echo "  sudo USE_PROXY=true $0 --upgrade"
+        fi
+    fi
+}
+
 # 检查参数
 case "${1:-}" in
     --uninstall|-u)
         check_root
         uninstall
         ;;
+    --upgrade|-U)
+        check_root
+        upgrade
+        ;;
+    --check-update|-c)
+        check_update
+        ;;
     --help|-h)
         echo "用法: $0 [选项]"
         echo "选项:"
         echo "  --uninstall, -u    卸载服务"
+        echo "  --upgrade, -U      升级二进制文件"
+        echo "  --check-update, -c 检查更新"
         echo "  --help, -h         显示帮助信息"
         echo
         echo "环境变量:"
@@ -455,6 +590,9 @@ case "${1:-}" in
         echo "  sudo $0                                    # 安装服务"
         echo "  sudo USE_PROXY=true $0                     # 使用代理安装"
         echo "  sudo USE_PROXY=true PROXY=https://ghproxy.com $0  # 使用自定义代理"
+        echo "  sudo $0 --check-update                     # 检查更新"
+        echo "  sudo $0 --upgrade                          # 升级二进制文件"
+        echo "  sudo USE_PROXY=true $0 --upgrade           # 使用代理升级"
         echo "  sudo $0 --uninstall                        # 卸载服务"
         ;;
     "")

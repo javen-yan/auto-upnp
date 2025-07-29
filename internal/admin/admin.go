@@ -236,8 +236,8 @@ func (as *AdminServer) handleAddMapping(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 如果InternalPort在PortRange范围内，则返回错误
-	if req.InternalPort < as.config.PortRange.Start || req.InternalPort > as.config.PortRange.End {
-		as.writeJSONResponse(w, http.StatusBadRequest, "内部端口不在端口范围内", nil)
+	if req.InternalPort >= as.config.PortRange.Start && req.InternalPort <= as.config.PortRange.End {
+		as.writeJSONResponse(w, http.StatusBadRequest, "内部端口在端口范围内,请勿重复添加", nil)
 		return
 	}
 
