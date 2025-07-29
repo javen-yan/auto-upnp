@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*' # 推送v开头的tag时触发
+      - 'v*'
 
 jobs:
   build:
@@ -18,30 +18,13 @@ jobs:
           go-version: '1.21'
           cache: true
 
-      - name: Debug environment
-        run: |
-          echo "Go version:"
-          go version
-          echo "Go env:"
-          go env
-          echo "Current directory:"
-          pwd
-          echo "Directory contents:"
-          ls -la
-          echo "Go module info:"
-          go mod download
-          go mod verify
-
       - name: Build for multiple platforms
         run: |
-          # 设置版本信息
           VERSION=${GITHUB_REF#refs/tags/}
           echo "Building version: $VERSION"
           
-          # 创建发布目录
           mkdir -p release
           
-          # 构建多个平台的静态二进制文件
           platforms=(
             "linux/amd64"
             "linux/arm64"
@@ -53,7 +36,6 @@ jobs:
           for platform in "${platforms[@]}"; do
             IFS='/' read -r os arch <<< "$platform"
             
-            # 设置输出文件名
             if [ "$os" = "windows" ]; then
               output_name="auto-upnp-${os}-${arch}.exe"
             else
@@ -62,21 +44,17 @@ jobs:
             
             echo "Building for $os/$arch..."
             
-            # 获取提交信息
             COMMIT=$(git rev-parse --short HEAD)
             DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             
-            # 构建静态二进制文件
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build \
               -a -installsuffix cgo \
               -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE -extldflags '-static'" \
               -o "release/$output_name" \
               cmd/main.go
             
-            # 验证构建结果
             if [ -f "release/$output_name" ]; then
               echo "✓ Built: release/$output_name"
-              # 显示文件大小
               ls -lh "release/$output_name"
             else
               echo "✗ Failed to build: release/$output_name"
@@ -84,41 +62,9 @@ jobs:
             fi
           done
           
-          # 创建安装脚本的副本
           cp install.sh release/install.sh
           chmod +x release/install.sh
-          
-          # 创建配置文件示例
           cp config.yaml release/config.yaml.example
-          
-          # 创建README
-          cat > release/README.md << 'EOF'
-# 自动UPnP服务 Release
-
-## 快速安装
-
-### Linux (推荐)
-```bash
-# 下载并运行安装脚本
-curl -fsSL https://raw.githubusercontent.com/javen-yan/auto-upnp/main/install.sh | sudo bash
-```
-
-### 手动安装
-1. 下载对应平台的二进制文件
-2. 重命名为 `auto-upnp`
-3. 设置执行权限: `chmod +x auto-upnp`
-4. 复制配置文件: `cp config.yaml.example config.yaml`
-5. 编辑配置文件: `nano config.yaml`
-6. 运行: `./auto-upnp -config config.yaml`
-
-## 平台支持
-- Linux (amd64, arm64)
-- macOS (amd64, arm64)
-- Windows (amd64)
-
-## 配置文件
-请参考 `config.yaml.example` 文件进行配置。
-EOF
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -131,7 +77,6 @@ EOF
             release/auto-upnp-windows-amd64.exe
             release/install.sh
             release/config.yaml.example
-            release/README.md
           draft: false
           prerelease: false
           generate_release_notes: true
