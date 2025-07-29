@@ -1,98 +1,118 @@
-# 自动UPnP服务
+# Auto UPnP - 自动UPnP端口映射服务
 
-一个用Golang编写的自动UPnP端口映射服务，能够自动监控端口状态并管理UPnP端口映射。
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)]()
 
-## 功能特性
+一个用Go语言编写的高性能自动UPnP端口映射服务，能够智能监控端口状态并自动管理UPnP端口映射，提供现代化的Web管理界面。
 
-- 🔍 **自动端口监控**: 监控指定端口范围的上下线状态
-- 🔄 **自动UPnP映射**: 根据端口状态自动添加/删除UPnP端口映射
-- 🛠️ **手动映射管理**: 支持手动添加和删除端口映射，自动持久化保存
-- 🧹 **自动清理**: 自动清理过期的端口映射
-- 📊 **状态监控**: 实时监控服务状态和端口映射情况
-- 🌐 **Web管理界面**: 提供HTTP管理界面，支持浏览器操作
-- 🔐 **安全认证**: 管理界面支持用户名密码认证
-- 📝 **详细日志**: 完整的日志记录和错误处理
-- ⚙️ **灵活配置**: 支持YAML配置文件自定义各种参数
+## ✨ 主要特性
 
-## 系统要求
+### 🔍 智能端口监控
+- **自动端口检测**: 监控指定端口范围的上下线状态
+- **实时状态更新**: 毫秒级响应端口状态变化
+- **多协议支持**: 同时支持TCP和UDP协议监控
+- **智能重试机制**: 自动重试失败的端口检测
 
-- Go 1.21 或更高版本
-- 支持UPnP的路由器
-- Linux/macOS/Windows
+### 🔄 自动UPnP映射管理
+- **智能映射**: 根据端口状态自动添加/删除UPnP端口映射
+- **映射持久化**: 自动保存手动映射，服务重启后自动恢复
+- **映射清理**: 定期清理过期和无效的端口映射
+- **映射限制**: 可配置最大映射数量，防止资源耗尽
 
-## 安装
+### 🌐 现代化Web管理界面
+- **响应式设计**: 支持桌面和移动设备访问
+- **实时数据更新**: 每5秒自动刷新状态信息
+- **可视化监控**: 图形化显示端口活跃状态和映射情况
+- **RESTful API**: 提供完整的API接口支持程序化操作
 
-### 方法1：使用安装脚本（推荐）
+### 🔐 安全与认证
+- **基本认证**: 用户名密码保护管理界面
+- **HTTPS支持**: 可配置SSL证书支持安全访问
+- **访问控制**: 可限制管理界面访问IP地址
+- **日志审计**: 完整的操作日志记录
+
+### ⚙️ 灵活配置
+- **YAML配置**: 人性化的配置文件格式
+- **热重载**: 支持运行时配置更新
+- **多环境支持**: 开发、测试、生产环境配置分离
+- **网络接口选择**: 支持指定优先和排除的网络接口
+
+## 🚀 快速开始
+
+### 系统要求
+
+- **操作系统**: Linux, macOS, Windows
+- **Go版本**: 1.21 或更高版本
+- **网络**: 支持UPnP的路由器
+- **权限**: 需要网络访问权限
+
+### 安装方式
+
+#### 方式一：使用安装脚本（推荐）
 
 ```bash
-# 下载并运行安装脚本
+# 一键安装
 curl -fsSL https://raw.githubusercontent.com/your-username/auto-upnp/main/install.sh | sudo bash
 
-# 或者先下载再运行
+# 或分步安装
 wget https://raw.githubusercontent.com/your-username/auto-upnp/main/install.sh
 chmod +x install.sh
 sudo ./install.sh
 ```
 
-安装脚本会自动：
-- 从GitHub下载最新的release版本
+安装脚本会自动完成：
+- 下载最新release版本
 - 生成默认配置文件到 `/etc/auto-upnp/config.yaml`
 - 创建systemd服务文件
-- 设置日志目录
+- 设置日志目录和权限
 
-### 方法2：手动安装
+#### 方式二：手动安装
 
-1. 克隆项目：
 ```bash
+# 1. 克隆项目
 git clone <repository-url>
 cd auto-upnp
-```
 
-2. 安装依赖：
-```bash
+# 2. 安装依赖
 go mod tidy
-```
 
-3. 编译项目：
-
-### 方法1：静态编译（推荐，解决GLIBC版本问题）
-```bash
-# 使用构建脚本
+# 3. 构建项目（推荐静态编译）
 ./build-static.sh
 
-# 或手动构建
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o auto-upnp-static cmd/main.go
+# 4. 复制配置文件
+cp config.yaml /etc/auto-upnp/config.yaml
+
+# 5. 安装到系统
+sudo cp build/auto-upnp-static /usr/local/bin/auto-upnp
 ```
 
-### 方法2：使用Makefile
+#### 方式三：使用Makefile
+
 ```bash
-# 静态构建
+# 安装依赖
+make deps
+
+# 静态构建（解决GLIBC版本问题）
 make build-static
 
-# 兼容版本构建
-make build-compatible
-
-# 构建所有平台
+# 构建所有平台版本
 make build-all
+
+# 安装到系统
+make install
 ```
 
-### 方法3：普通构建
-```bash
-go build -o auto-upnp cmd/main.go
-```
-
-**注意**：如果遇到GLIBC版本问题，请使用静态编译方法。
-
-## 配置
+### 配置说明
 
 创建配置文件 `config.yaml`：
 
 ```yaml
 # 端口监听范围配置
 port_range:
-  start: 8000      # 起始端口
-  end: 9000        # 结束端口
-  step: 1          # 端口间隔
+  start: 18000      # 起始端口
+  end: 19000        # 结束端口
+  step: 1           # 端口间隔
 
 # UPnP配置
 upnp:
@@ -105,9 +125,10 @@ upnp:
 admin:
   enabled: true             # 是否启用管理服务
   host: "0.0.0.0"          # 监听地址
-  port: 8080               # 监听端口
+  port: 8080               # 监听端口（自动选择可用端口）
   username: "admin"         # 用户名
-  password: "admin"      # 密码
+  password: "admin"         # 密码
+  data_dir: "data"          # 数据目录
 
 # 网络接口配置
 network:
@@ -116,11 +137,11 @@ network:
 
 # 日志配置
 log:
-  level: "info"
-  format: "json"
-  file: "auto_upnp.log"
-  max_size: 10485760  # 10MB
-  backup_count: 5
+  level: "info"             # 日志级别: debug, info, warn, error
+  format: "json"            # 日志格式: json, text
+  file: "auto_upnp.log"     # 日志文件
+  max_size: 10485760        # 最大文件大小 (10MB)
+  backup_count: 5           # 备份文件数量
 
 # 监控配置
 monitor:
@@ -129,9 +150,11 @@ monitor:
   max_mappings: 100         # 最大端口映射数量
 ```
 
-## 使用方法
+## 🎯 使用方法
 
-### 服务管理（使用安装脚本安装后）
+### 服务管理
+
+#### 使用systemd管理（推荐）
 
 ```bash
 # 启动服务
@@ -156,120 +179,190 @@ sudo systemctl enable auto-upnp
 sudo systemctl disable auto-upnp
 ```
 
-### 手动运行
+#### 手动运行
 
 ```bash
-# 使用静态编译的版本（推荐）
+# 使用默认配置启动
 ./auto-upnp-static
-
-# 使用默认配置文件启动
-./auto-upnp-static -config config.yaml
 
 # 指定配置文件
 ./auto-upnp-static -config /path/to/config.yaml
 
-# 设置日志级别
+# 调试模式
 ./auto-upnp-static -log-level debug
 
 # 显示帮助信息
 ./auto-upnp-static -help
+```
 
-## Web管理界面
+### Web管理界面
 
-服务启动后，可以通过Web浏览器访问管理界面：
+服务启动后，通过浏览器访问管理界面：
 
-### 访问地址
+#### 访问地址
 ```
 http://localhost:8080
 ```
-（如果8080端口被占用，服务会自动选择下一个可用端口）
+> **注意**: 如果8080端口被占用，服务会自动选择下一个可用端口
 
-### 登录认证
-- 用户名：admin
-- 密码：admin
-（可在配置文件中修改）
+#### 登录认证
+- **用户名**: admin
+- **密码**: admin
+> 可在配置文件中修改认证信息
 
-### 功能特性
-- 📊 **服务状态监控**: 实时显示活跃端口、映射数量等
-- 🔧 **端口映射管理**: 查看、添加、删除端口映射
-- 📈 **端口状态可视化**: 图形化显示端口活跃状态
-- ⚡ **实时更新**: 每5秒自动刷新数据
+#### 界面功能
 
-### API接口
-管理界面还提供了RESTful API接口，支持程序化操作：
+##### 📊 服务状态监控
+- 实时显示活跃端口数量
+- 显示总映射数、自动映射数、手动映射数
+- 监控服务运行状态和UPnP设备状态
 
-- `GET /api/status` - 获取服务状态
-- `GET /api/mappings` - 获取端口映射列表
-- `POST /api/add-mapping` - 添加端口映射 (JSON格式)
-- `POST /api/remove-mapping` - 删除端口映射 (JSON格式)
-- `GET /api/ports` - 获取端口状态
-- `GET /api/upnp-status` - 获取UPnP状态
+##### 🔧 端口映射管理
+- 查看所有端口映射列表
+- 显示映射详细信息（内部端口、外部端口、协议、描述等）
+- 支持删除现有映射
+- 区分自动映射和手动映射
 
+##### ➕ 手动端口映射
+- 添加新的端口映射
+- 支持TCP和UDP协议
+- 可自定义映射描述
+- 自动持久化保存
+
+##### 📈 端口状态可视化
+- 图形化显示所有监控端口的活跃状态
+- 实时更新端口状态
+- 支持端口状态筛选和搜索
+
+#### API接口
+
+管理界面提供完整的RESTful API：
+
+```bash
+# 获取服务状态
+GET /api/status
+
+# 获取端口映射列表
+GET /api/mappings
+
+# 添加端口映射
+POST /api/add-mapping
+Content-Type: application/json
+{
+  "internal_port": 8080,
+  "external_port": 8080,
+  "protocol": "TCP",
+  "description": "Web服务"
+}
+
+# 删除端口映射
+POST /api/remove-mapping
+Content-Type: application/json
+{
+  "external_port": 8080,
+  "protocol": "TCP"
+}
+
+# 获取端口状态
+GET /api/ports
+
+# 获取UPnP状态
+GET /api/upnp-status
 ```
+
 详细API文档请参考 [API_EXAMPLES.md](API_EXAMPLES.md)
 
-### 使用Makefile运行
-```bash
-# 构建并运行静态版本
-make run-static
+## 🏗️ 项目架构
 
-# 构建并运行调试版本
-make run-debug
-```
-
-### 命令行选项
-
-- `-config`: 配置文件路径 (默认: config.yaml)
-- `-log-level`: 日志级别 (debug, info, warn, error) (默认: info)
-- `-help`: 显示帮助信息
-
-## 工作原理
-
-1. **设备发现**: 启动时自动发现网络中的UPnP设备
-2. **端口监控**: 定期检查配置的端口范围，检测端口状态变化
-3. **自动映射**: 
-   - 当检测到端口上线时，自动添加UPnP端口映射
-   - 当检测到端口下线时，自动删除UPnP端口映射
-4. **手动映射**: 
-   - 支持用户手动添加端口映射
-   - 自动保存手动映射到 `manual_mappings.json` 文件
-   - 服务重启时自动恢复所有手动映射
-5. **状态管理**: 维护端口映射状态，避免重复操作
-6. **定期清理**: 定期清理过期的端口映射
-
-## 项目结构
+### 目录结构
 
 ```
 auto-upnp/
 ├── cmd/
-│   └── main.go              # 主程序入口
+│   └── main.go                    # 主程序入口
 ├── config/
-│   └── config.go            # 配置管理
+│   └── config.go                  # 配置管理
 ├── internal/
-│   ├── admin/
-│   │   ├── admin.go         # HTTP管理服务器
-│   │   └── templates.go     # HTML模板
-│   ├── portmonitor/
-│   │   └── port_monitor.go  # 端口监控器
-│   ├── service/
+│   ├── admin/                     # Web管理界面
+│   │   ├── admin.go              # HTTP服务器
+│   │   └── templates.go          # HTML模板
+│   ├── portmonitor/              # 端口监控
+│   │   └── port_monitor.go       # 端口监控器
+│   ├── service/                  # 核心服务
 │   │   └── auto_upnp_service.go  # 自动UPnP服务
-│   └── upnp/
-│       └── upnp_manager.go  # UPnP管理器
-├── config.yaml              # 配置文件
-├── manual_mappings.json     # 手动映射持久化文件
-├── go.mod                   # Go模块文件
-├── go.sum                   # 依赖校验文件
-├── README.md               # 项目说明
-└── ADMIN_README.md         # 管理界面说明
+│   └── upnp/                     # UPnP管理
+│       └── upnp_manager.go       # UPnP管理器
+├── data/                         # 数据目录
+├── config.yaml                   # 配置文件
+├── manual_mappings.json          # 手动映射持久化
+├── go.mod                        # Go模块文件
+├── go.sum                        # 依赖校验文件
+├── Makefile                      # 构建脚本
+├── build.sh                      # 构建脚本
+├── install.sh                    # 安装脚本
+├── README.md                     # 项目说明
+├── ADMIN_README.md               # 管理界面说明
+├── API_EXAMPLES.md               # API使用示例
+└── PORT_MONITOR_SEPARATION.md    # 端口监控分离说明
 ```
 
-## 手动映射持久化
+### 核心组件
 
-服务支持手动添加端口映射，并自动持久化保存：
+#### 1. 端口监控器 (PortMonitor)
+- 负责监控指定端口范围的状态变化
+- 支持TCP和UDP协议检测
+- 提供端口状态事件通知
 
-### 手动映射文件格式
+#### 2. UPnP管理器 (UPnPManager)
+- 负责UPnP设备发现和通信
+- 管理端口映射的添加、删除和查询
+- 处理UPnP协议相关的错误和重试
 
-手动映射保存在 `manual_mappings.json` 文件中，格式如下：
+#### 3. 自动UPnP服务 (AutoUPnPService)
+- 协调端口监控和UPnP管理
+- 实现自动映射逻辑
+- 管理手动映射的持久化
+
+#### 4. Web管理界面 (Admin)
+- 提供HTTP管理服务器
+- 实现RESTful API接口
+- 提供现代化的Web界面
+
+## 🔧 高级配置
+
+### 网络接口配置
+
+```yaml
+network:
+  preferred_interfaces: ["eth0", "wlan0"]  # 优先使用的网络接口
+  exclude_interfaces: ["lo", "docker"]     # 排除的网络接口
+```
+
+### 日志配置
+
+```yaml
+log:
+  level: "info"             # 日志级别
+  format: "json"            # 日志格式
+  file: "auto_upnp.log"     # 日志文件路径
+  max_size: 10485760        # 最大文件大小 (字节)
+  backup_count: 5           # 备份文件数量
+```
+
+### 监控配置
+
+```yaml
+monitor:
+  check_interval: 30s       # 端口状态检查间隔
+  cleanup_interval: 5m      # 清理无效映射间隔
+  max_mappings: 100         # 最大端口映射数量
+```
+
+## 📝 手动映射持久化
+
+### 文件格式
+
+手动映射保存在 `manual_mappings.json` 文件中：
 
 ```json
 [
@@ -277,7 +370,7 @@ auto-upnp/
     "internal_port": 8080,
     "external_port": 8080,
     "protocol": "TCP",
-    "description": "手动映射 8080->8080",
+    "description": "Web服务",
     "created_at": "2024-01-15T10:30:00Z"
   }
 ]
@@ -285,31 +378,117 @@ auto-upnp/
 
 ### 持久化特性
 
-- **自动保存**: 每次添加或删除手动映射时，自动更新文件
+- **自动保存**: 每次添加或删除手动映射时自动更新文件
 - **自动恢复**: 服务启动时自动加载并恢复所有手动映射
-- **错误处理**: 如果恢复某个映射失败，会记录警告日志但继续处理其他映射
-- **文件位置**: 默认保存在程序运行目录下的 `manual_mappings.json`
+- **错误处理**: 恢复失败时记录警告但继续处理其他映射
+- **文件位置**: 默认保存在程序运行目录下
 
-### 手动映射管理
+## 🛠️ 开发指南
 
-- 通过Web管理界面添加/删除手动映射
-- 手动映射与自动映射分开管理
-- 手动映射不会因为端口状态变化而自动删除
-- 只有通过管理界面删除才会移除手动映射
+### 环境准备
 
-## 日志说明
+```bash
+# 克隆项目
+git clone <repository-url>
+cd auto-upnp
 
-服务会输出详细的JSON格式日志，包括：
+# 安装依赖
+go mod tidy
 
+# 运行测试
+make test
+
+# 代码格式化
+make fmt
+
+# 代码检查
+make lint
+```
+
+### 构建选项
+
+```bash
+# 普通构建
+make build
+
+# 静态构建（解决GLIBC版本问题）
+make build-static
+
+# 兼容旧版本GLIBC
+make build-compatible
+
+# 构建所有平台
+make build-all
+
+# 运行服务
+make run-static
+
+# 调试模式运行
+make run-debug
+```
+
+### 添加新功能
+
+1. 在相应的包中添加新功能
+2. 更新配置文件结构（如需要）
+3. 添加测试用例
+4. 更新文档
+
+## 🐛 故障排除
+
+### 常见问题
+
+#### 1. GLIBC版本问题
+```bash
+# 错误信息
+./auto-upnp: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.34' not found
+
+# 解决方案：使用静态编译
+make build-static
+```
+
+#### 2. 无法发现UPnP设备
+- 确保路由器支持UPnP功能
+- 检查路由器UPnP设置是否启用
+- 确认防火墙允许UPnP通信
+- 检查网络连接状态
+
+#### 3. 端口映射失败
+- 检查路由器UPnP设置
+- 确认端口未被其他服务占用
+- 查看日志获取详细错误信息
+- 检查端口范围配置
+
+#### 4. 服务无法启动
+- 检查配置文件格式是否正确
+- 确认端口范围设置合理
+- 查看系统权限和网络访问权限
+- 检查日志文件获取错误信息
+
+#### 5. Web界面无法访问
+- 确认管理服务已启用
+- 检查防火墙设置
+- 验证访问地址和端口
+- 确认认证信息正确
+
+### 调试模式
+
+使用debug日志级别获取详细信息：
+
+```bash
+./auto-upnp-static -log-level debug
+```
+
+### 日志分析
+
+服务输出JSON格式日志，包含：
 - 服务启动/停止信息
 - UPnP设备发现过程
 - 端口状态变化
-- 端口映射添加/删除操作
-- 手动映射恢复过程
+- 端口映射操作
 - 错误和警告信息
-- 定期状态报告
 
-## 卸载
+## 📦 卸载
 
 ### 使用安装脚本卸载
 
@@ -320,12 +499,6 @@ sudo ./install.sh --uninstall
 # 或使用短选项
 sudo ./install.sh -u
 ```
-
-卸载脚本会：
-- 停止并禁用systemd服务
-- 删除二进制文件
-- 删除systemd服务文件
-- 可选择删除配置文件目录
 
 ### 手动卸载
 
@@ -343,82 +516,41 @@ sudo rm -rf /etc/auto-upnp
 sudo systemctl daemon-reload
 ```
 
-## 故障排除
+## 📄 许可证
 
-### 常见问题
+本项目采用 [MIT License](LICENSE) 许可证。
 
-1. **GLIBC版本问题**
-   ```bash
-   # 错误信息：./auto-upnp: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.34' not found
-   
-   # 解决方案：使用静态编译
-   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o auto-upnp-static cmd/main.go
-   
-   # 或使用构建脚本
-   ./build-static.sh
-   ```
-
-2. **无法发现UPnP设备**
-   - 确保路由器支持UPnP功能
-   - 检查防火墙设置
-   - 确认网络连接正常
-
-3. **端口映射失败**
-   - 检查路由器UPnP设置
-   - 确认端口未被其他服务占用
-   - 查看日志获取详细错误信息
-
-4. **服务无法启动**
-   - 检查配置文件格式
-   - 确认端口范围设置正确
-   - 查看系统权限
-
-5. **构建失败**
-   - 确保Go版本 >= 1.21
-   - 检查网络连接（下载依赖）
-   - 尝试清理并重新构建：`make clean && make build-static`
-
-6. **UPnP设备发现失败**
-   - 确保路由器支持UPnP功能
-   - 检查路由器UPnP设置是否启用
-   - 确保防火墙允许UPnP通信
-
-### 调试模式
-
-使用debug日志级别获取更详细的信息：
-
-```bash
-./auto-upnp-static -log-level debug
-```
-
-
-
-## 开发
-
-### 添加新功能
-
-1. 在相应的包中添加新功能
-2. 更新配置文件结构（如需要）
-3. 添加测试用例
-4. 更新文档
-
-### 运行测试
-
-```bash
-go test ./...
-```
-
-## 许可证
-
-MIT License
-
-## 贡献
+## 🤝 贡献
 
 欢迎提交Issue和Pull Request！
 
-## 更新日志
+### 贡献指南
 
-### v1.0.0
-- 初始版本发布
-- 支持自动端口监控和UPnP映射
-- 完整的配置管理和日志系统 
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 打开 Pull Request
+
+## 📞 支持
+
+如果您遇到问题或有建议，请：
+
+1. 查看 [故障排除](#故障排除) 部分
+2. 搜索现有的 [Issues](../../issues)
+3. 创建新的 Issue 并详细描述问题
+
+## 📈 更新日志
+
+### v1.0.0 (2024-01-15)
+- 🎉 初始版本发布
+- ✨ 支持自动端口监控和UPnP映射
+- 🌐 提供现代化Web管理界面
+- 🔐 实现安全认证和API接口
+- 📝 完整的配置管理和日志系统
+- 🛠️ 支持手动映射持久化
+- 📦 提供一键安装脚本
+
+---
+
+**Auto UPnP** - 让端口映射变得简单智能！ 🚀 
