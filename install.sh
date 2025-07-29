@@ -21,7 +21,7 @@ CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 BIN_DIR="/usr/local/bin"
 BINARY_NAME="auto-upnp"
 BINARY_PATH="${BIN_DIR}/${BINARY_NAME}"
-USE_PROXY=${USE_PROXY:-false}
+USE_PROXY=${USE_PROXY:-true}
 PROXY=${PROXY:-"https://ghfast.top"}
 
 # 日志函数
