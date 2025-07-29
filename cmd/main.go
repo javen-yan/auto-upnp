@@ -132,7 +132,7 @@ func showUsage() {
 }
 
 func showVersionInfo() {
-	fmt.Printf("自动UPnP服务 v%s\n", version)
+	fmt.Printf("自动UPnP服务 %s\n", version)
 	fmt.Printf("提交: %s\n", commit)
 	fmt.Printf("构建时间: %s\n", date)
 }
