@@ -56,7 +56,8 @@ func (as *AutoUPnPService) Start() error {
 
 	// 发现UPnP设备
 	if err := as.upnpManager.Discover(); err != nil {
-		return fmt.Errorf("UPnP设备发现失败: %w", err)
+		as.logger.WithError(err).Warn("UPnP设备发现失败，将在后台继续尝试")
+		// 不返回错误，继续运行服务
 	}
 
 	// 初始化端口监控器
@@ -77,6 +78,10 @@ func (as *AutoUPnPService) Start() error {
 	// 启动清理协程
 	as.wg.Add(1)
 	go as.cleanupRoutine()
+
+	// 启动UPnP重试协程
+	as.wg.Add(1)
+	go as.upnpRetryRoutine()
 
 	as.logger.Info("自动UPnP服务启动完成")
 	return nil
@@ -182,6 +187,33 @@ func (as *AutoUPnPService) cleanupExpiredMappings() {
 		if !exists || !status.IsActive {
 			as.logger.WithField("port", port).Info("清理非活跃的端口映射记录")
 			delete(as.activeMappings, port)
+		}
+	}
+}
+
+// upnpRetryRoutine UPnP重试协程
+func (as *AutoUPnPService) upnpRetryRoutine() {
+	defer as.wg.Done()
+
+	// 每5分钟尝试重新发现UPnP设备
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-as.ctx.Done():
+			return
+		case <-ticker.C:
+			// 检查是否有活跃的端口映射需要处理
+			activePorts := as.portMonitor.GetActivePorts()
+			if len(activePorts) > 0 {
+				as.logger.Info("检测到活跃端口，尝试重新发现UPnP设备")
+				if err := as.upnpManager.Discover(); err != nil {
+					as.logger.WithError(err).Debug("UPnP设备发现失败，继续等待")
+				} else {
+					as.logger.Info("UPnP设备重新发现成功")
+				}
+			}
 		}
 	}
 }

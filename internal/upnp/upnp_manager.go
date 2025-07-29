@@ -25,13 +25,14 @@ type PortMapping struct {
 
 // UPnPManager UPnP管理器
 type UPnPManager struct {
-	logger   *logrus.Logger
-	clients  []*internetgateway1.WANIPConnection1
-	mutex    sync.RWMutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mappings map[string]*PortMapping
-	config   *Config
+	logger     *logrus.Logger
+	clients    []*internetgateway1.WANIPConnection1
+	mutex      sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	mappings   map[string]*PortMapping
+	config     *Config
+	discovered bool
 }
 
 // Config UPnP配置
@@ -48,12 +49,13 @@ func NewUPnPManager(config *Config, logger *logrus.Logger) *UPnPManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &UPnPManager{
-		logger:   logger,
-		clients:  make([]*internetgateway1.WANIPConnection1, 0),
-		ctx:      ctx,
-		cancel:   cancel,
-		mappings: make(map[string]*PortMapping),
-		config:   config,
+		logger:     logger,
+		clients:    make([]*internetgateway1.WANIPConnection1, 0),
+		ctx:        ctx,
+		cancel:     cancel,
+		mappings:   make(map[string]*PortMapping),
+		config:     config,
+		discovered: false,
 	}
 }
 
@@ -61,11 +63,8 @@ func NewUPnPManager(config *Config, logger *logrus.Logger) *UPnPManager {
 func (um *UPnPManager) Discover() error {
 	um.logger.Info("开始发现UPnP设备")
 
-	ctx, cancel := context.WithTimeout(um.ctx, um.config.DiscoveryTimeout)
-	defer cancel()
-
 	// 发现所有UPnP设备
-	devices, err := goupnp.DiscoverDevices(ctx, "urn:schemas-upnp-org:device:InternetGatewayDevice:1")
+	devices, err := goupnp.DiscoverDevices("urn:schemas-upnp-org:device:InternetGatewayDevice:1")
 	if err != nil {
 		return fmt.Errorf("发现UPnP设备失败: %w", err)
 	}
@@ -78,15 +77,15 @@ func (um *UPnPManager) Discover() error {
 
 	// 获取WAN IP连接客户端
 	for _, device := range devices {
-		client, err := internetgateway1.NewWANIPConnection1ClientsFromDevice(device, device.Root.URLBase)
+		clients, err := internetgateway1.NewWANIPConnection1ClientsFromRootDevice(device.Root, &device.Root.URLBase)
 		if err != nil {
 			um.logger.WithField("device", device.Root.Device.FriendlyName).Warn("无法创建WAN IP连接客户端")
 			continue
 		}
 
-		if len(client) > 0 {
+		if len(clients) > 0 {
 			um.mutex.Lock()
-			um.clients = append(um.clients, client[0])
+			um.clients = append(um.clients, clients[0])
 			um.mutex.Unlock()
 
 			um.logger.WithFields(logrus.Fields{
@@ -101,6 +100,7 @@ func (um *UPnPManager) Discover() error {
 	}
 
 	um.logger.WithField("client_count", len(um.clients)).Info("UPnP设备发现完成")
+	um.discovered = true
 	return nil
 }
 
@@ -118,6 +118,14 @@ func (um *UPnPManager) AddPortMapping(internalPort, externalPort int, protocol s
 	mappingKey := um.getMappingKey(internalPort, externalPort, protocol)
 	if _, exists := um.mappings[mappingKey]; exists {
 		return fmt.Errorf("端口映射已存在: %s", mappingKey)
+	}
+
+	// 如果没有发现UPnP设备，先尝试重新发现
+	if !um.discovered || len(um.clients) == 0 {
+		um.logger.Info("尝试重新发现UPnP设备")
+		if err := um.Discover(); err != nil {
+			return fmt.Errorf("无法发现UPnP设备，无法添加端口映射: %w", err)
+		}
 	}
 
 	// 获取本地IP地址
@@ -178,6 +186,14 @@ func (um *UPnPManager) RemovePortMapping(internalPort, externalPort int, protoco
 	mapping, exists := um.mappings[mappingKey]
 	if !exists {
 		return fmt.Errorf("端口映射不存在: %s", mappingKey)
+	}
+
+	// 如果没有发现UPnP设备，先尝试重新发现
+	if !um.discovered || len(um.clients) == 0 {
+		um.logger.Info("尝试重新发现UPnP设备")
+		if err := um.Discover(); err != nil {
+			return fmt.Errorf("无法发现UPnP设备，无法删除端口映射: %w", err)
+		}
 	}
 
 	// 尝试从所有客户端删除映射
@@ -267,31 +283,25 @@ func (um *UPnPManager) CleanupExpiredMappings() {
 
 // addPortMappingToClient 向指定客户端添加端口映射
 func (um *UPnPManager) addPortMappingToClient(client *internetgateway1.WANIPConnection1, internalPort, externalPort int, protocol, internalClient, description string) error {
-	ctx, cancel := context.WithTimeout(um.ctx, 10*time.Second)
-	defer cancel()
-
-	return client.AddPortMapping(ctx, &internetgateway1.AddPortMappingArgs{
-		NewRemoteHost:             "",
-		NewExternalPort:           uint16(externalPort),
-		NewProtocol:               protocol,
-		NewInternalPort:           uint16(internalPort),
-		NewInternalClient:         internalClient,
-		NewEnabled:                1,
-		NewPortMappingDescription: description,
-		NewLeaseDuration:          uint32(um.config.MappingDuration.Seconds()),
-	})
+	return client.AddPortMapping(
+		"",                   // NewRemoteHost
+		uint16(externalPort), // NewExternalPort
+		protocol,             // NewProtocol
+		uint16(internalPort), // NewInternalPort
+		internalClient,       // NewInternalClient
+		true,                 // NewEnabled
+		description,          // NewPortMappingDescription
+		uint32(um.config.MappingDuration.Seconds()), // NewLeaseDuration
+	)
 }
 
 // removePortMappingFromClient 从指定客户端删除端口映射
 func (um *UPnPManager) removePortMappingFromClient(client *internetgateway1.WANIPConnection1, externalPort int, protocol string) error {
-	ctx, cancel := context.WithTimeout(um.ctx, 10*time.Second)
-	defer cancel()
-
-	return client.DeletePortMapping(ctx, &internetgateway1.DeletePortMappingArgs{
-		NewRemoteHost:   "",
-		NewExternalPort: uint16(externalPort),
-		NewProtocol:     protocol,
-	})
+	return client.DeletePortMapping(
+		"",                   // NewRemoteHost
+		uint16(externalPort), // NewExternalPort
+		protocol,             // NewProtocol
+	)
 }
 
 // getMappingKey 获取映射键

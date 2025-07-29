@@ -24,7 +24,7 @@ type PortRangeConfig struct {
 
 // UPnPConfig UPnP配置
 type UPnPConfig struct {
-	DiscoveryTimeout int           `mapstructure:"discovery_timeout"`
+	DiscoveryTimeout time.Duration `mapstructure:"discovery_timeout"`
 	MappingDuration  time.Duration `mapstructure:"mapping_duration"`
 	RetryAttempts    int           `mapstructure:"retry_attempts"`
 	RetryDelay       time.Duration `mapstructure:"retry_delay"`
