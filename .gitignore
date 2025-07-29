@@ -11,3 +11,4 @@
 .env.production
 build
 release
+auto_upnp.log

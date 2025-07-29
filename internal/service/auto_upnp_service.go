@@ -19,6 +19,7 @@ type AutoUPnPService struct {
 	logger         *logrus.Logger
 	portMonitor    *portmonitor.PortMonitor
 	upnpManager    *upnp.UPnPManager
+	manualManager  *ManualMappingManager
 	ctx            context.Context
 	cancel         context.CancelFunc
 	wg             sync.WaitGroup
@@ -30,9 +31,13 @@ type AutoUPnPService struct {
 func NewAutoUPnPService(cfg *config.Config, logger *logrus.Logger) *AutoUPnPService {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// 创建手动映射管理器，使用admin.data_dir
+	manualManager := NewManualMappingManager(cfg.Admin.DataDir, logger)
+
 	return &AutoUPnPService{
 		config:         cfg,
 		logger:         logger,
+		manualManager:  manualManager,
 		ctx:            ctx,
 		cancel:         cancel,
 		activeMappings: make(map[int]bool),
@@ -82,6 +87,11 @@ func (as *AutoUPnPService) Start() error {
 	// 启动UPnP重试协程
 	as.wg.Add(1)
 	go as.upnpRetryRoutine()
+
+	// 加载并恢复手动映射
+	if err := as.restoreManualMappings(); err != nil {
+		as.logger.WithError(err).Warn("恢复手动映射失败")
+	}
 
 	as.logger.Info("自动UPnP服务启动完成")
 	return nil
@@ -224,17 +234,48 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 	defer as.mappingMutex.RUnlock()
 
 	// 获取端口状态
-	portStatus := as.portMonitor.GetAllPortStatus()
-	activePorts := as.portMonitor.GetActivePorts()
-	inactivePorts := as.portMonitor.GetInactivePorts()
+	var portStatus map[int]*portmonitor.PortStatus
+	var activePorts []int
+	var inactivePorts []int
+
+	if as.portMonitor != nil {
+		portStatus = as.portMonitor.GetAllPortStatus()
+		activePorts = as.portMonitor.GetActivePorts()
+		inactivePorts = as.portMonitor.GetInactivePorts()
+	} else {
+		portStatus = make(map[int]*portmonitor.PortStatus)
+		activePorts = []int{}
+		inactivePorts = []int{}
+	}
 
 	// 获取UPnP映射状态
-	upnpMappings := as.upnpManager.GetPortMappings()
+	var upnpMappings map[string]*upnp.PortMapping
+	if as.upnpManager != nil {
+		upnpMappings = as.upnpManager.GetPortMappings()
+	} else {
+		upnpMappings = make(map[string]*upnp.PortMapping)
+	}
 
 	// 构建活跃映射列表
 	var activeMappings []int
 	for port := range as.activeMappings {
 		activeMappings = append(activeMappings, port)
+	}
+
+	// 获取手动映射信息
+	var manualMappings []*ManualMapping
+	if as.manualManager != nil {
+		manualMappings = as.manualManager.GetMappings()
+	} else {
+		manualMappings = []*ManualMapping{}
+	}
+
+	// 获取UPnP客户端数量
+	var upnpClientCount int
+	if as.upnpManager != nil {
+		upnpClientCount = as.upnpManager.GetClientCount()
+	} else {
+		upnpClientCount = 0
 	}
 
 	return map[string]interface{}{
@@ -256,6 +297,15 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 			"active_mappings": activeMappings,
 			"mappings":        upnpMappings,
 		},
+		"manual_mappings": map[string]interface{}{
+			"total_mappings": len(manualMappings),
+			"mappings":       manualMappings,
+		},
+		"upnp_status": map[string]interface{}{
+			"client_count": upnpClientCount,
+			"available":    upnpClientCount > 0,
+			"discovered":   as.upnpManager != nil && len(upnpMappings) > 0,
+		},
 		"config": map[string]interface{}{
 			"check_interval":   as.config.Monitor.CheckInterval.String(),
 			"cleanup_interval": as.config.Monitor.CleanupInterval.String(),
@@ -265,18 +315,71 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 	}
 }
 
+// restoreManualMappings 恢复手动映射
+func (as *AutoUPnPService) restoreManualMappings() error {
+	// 加载手动映射文件
+	if err := as.manualManager.LoadMappings(); err != nil {
+		return fmt.Errorf("加载手动映射失败: %w", err)
+	}
+
+	// 获取所有手动映射
+	mappings := as.manualManager.GetMappings()
+	if len(mappings) == 0 {
+		as.logger.Info("没有需要恢复的手动映射")
+		return nil
+	}
+
+	as.logger.Infof("开始恢复 %d 个手动映射", len(mappings))
+
+	// 恢复每个映射
+	for _, mapping := range mappings {
+		if err := as.upnpManager.AddPortMapping(
+			mapping.InternalPort,
+			mapping.ExternalPort,
+			mapping.Protocol,
+			mapping.Description,
+		); err != nil {
+			as.logger.WithError(err).WithFields(logrus.Fields{
+				"internal_port": mapping.InternalPort,
+				"external_port": mapping.ExternalPort,
+				"protocol":      mapping.Protocol,
+			}).Warn("恢复手动映射失败")
+		} else {
+			as.logger.WithFields(logrus.Fields{
+				"internal_port": mapping.InternalPort,
+				"external_port": mapping.ExternalPort,
+				"protocol":      mapping.Protocol,
+			}).Info("成功恢复手动映射")
+		}
+	}
+
+	return nil
+}
+
 // AddManualMapping 手动添加端口映射
 func (as *AutoUPnPService) AddManualMapping(internalPort, externalPort int, protocol, description string) error {
 	if description == "" {
 		description = fmt.Sprintf("Manual-%d", internalPort)
 	}
 
-	return as.upnpManager.AddPortMapping(internalPort, externalPort, protocol, description)
+	// 添加到UPnP管理器
+	if err := as.upnpManager.AddPortMapping(internalPort, externalPort, protocol, description); err != nil {
+		return err
+	}
+
+	// 保存到手动映射管理器
+	return as.manualManager.AddMapping(internalPort, externalPort, protocol, description)
 }
 
 // RemoveManualMapping 手动删除端口映射
 func (as *AutoUPnPService) RemoveManualMapping(internalPort, externalPort int, protocol string) error {
-	return as.upnpManager.RemovePortMapping(internalPort, externalPort, protocol)
+	// 从UPnP管理器中删除
+	if err := as.upnpManager.RemovePortMapping(internalPort, externalPort, protocol); err != nil {
+		return err
+	}
+
+	// 从手动映射管理器中删除
+	return as.manualManager.RemoveMapping(internalPort, externalPort, protocol)
 }
 
 // GetPortMappings 获取所有端口映射
@@ -286,10 +389,37 @@ func (as *AutoUPnPService) GetPortMappings() map[string]*upnp.PortMapping {
 
 // GetActivePorts 获取活跃端口列表
 func (as *AutoUPnPService) GetActivePorts() []int {
+	if as.portMonitor == nil {
+		return []int{}
+	}
 	return as.portMonitor.GetActivePorts()
 }
 
 // GetInactivePorts 获取非活跃端口列表
 func (as *AutoUPnPService) GetInactivePorts() []int {
+	if as.portMonitor == nil {
+		return []int{}
+	}
 	return as.portMonitor.GetInactivePorts()
+}
+
+// GetManualMappings 获取手动映射列表
+func (as *AutoUPnPService) GetManualMappings() []*ManualMapping {
+	if as.manualManager == nil {
+		return []*ManualMapping{}
+	}
+	return as.manualManager.GetMappings()
+}
+
+// GetUPnPClientCount 获取UPnP客户端数量
+func (as *AutoUPnPService) GetUPnPClientCount() int {
+	if as.upnpManager == nil {
+		return 0
+	}
+	return as.upnpManager.GetClientCount()
+}
+
+// IsUPnPAvailable 检查UPnP服务是否可用
+func (as *AutoUPnPService) IsUPnPAvailable() bool {
+	return as.GetUPnPClientCount() > 0
 }

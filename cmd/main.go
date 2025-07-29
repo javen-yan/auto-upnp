@@ -1,15 +1,15 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"auto-upnp/config"
+	"auto-upnp/internal/admin"
 	"auto-upnp/internal/service"
 
 	"github.com/sirupsen/logrus"
@@ -60,6 +60,19 @@ func main() {
 		logger.WithError(err).Fatal("加载配置文件失败")
 	}
 
+	// 配置日志文件输出
+	if cfg.Log.File != "" {
+		// 创建日志文件
+		logFile, err := os.OpenFile(cfg.Log.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			logger.WithError(err).Fatal("无法创建日志文件")
+		}
+
+		// 同时输出到控制台和文件
+		mw := io.MultiWriter(os.Stdout, logFile)
+		logger.SetOutput(mw)
+	}
+
 	// 创建自动UPnP服务
 	autoService := service.NewAutoUPnPService(cfg, logger)
 
@@ -68,39 +81,23 @@ func main() {
 		logger.WithError(err).Fatal("启动自动UPnP服务失败")
 	}
 
+	// 创建并启动HTTP管理服务
+	adminServer := admin.NewAdminServer(cfg, logger, autoService)
+	if err := adminServer.Start(); err != nil {
+		logger.WithError(err).Fatal("启动HTTP管理服务失败")
+	}
+
 	// 打印启动信息
 	logger.WithFields(logrus.Fields{
 		"config_file": *configFile,
 		"log_level":   *logLevel,
 		"port_range":  fmt.Sprintf("%d-%d", cfg.PortRange.Start, cfg.PortRange.End),
+		"admin_port":  adminServer.GetPort(),
 	}).Info("自动UPnP服务已启动")
 
 	// 等待中断信号
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// 创建上下文用于优雅关闭
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 启动状态监控协程
-	go func() {
-		ticker := time.NewTicker(60 * time.Second) // 每分钟输出一次状态
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				status := autoService.GetStatus()
-				logger.WithFields(logrus.Fields{
-					"active_ports":   status["port_status"].(map[string]interface{})["active_ports"],
-					"total_mappings": status["upnp_mappings"].(map[string]interface{})["total_mappings"],
-				}).Info("服务状态")
-			}
-		}
-	}()
 
 	// 等待信号
 	sig := <-sigChan
@@ -108,6 +105,7 @@ func main() {
 
 	// 停止服务
 	autoService.Stop()
+	adminServer.Stop()
 
 	logger.Info("自动UPnP服务已停止")
 }

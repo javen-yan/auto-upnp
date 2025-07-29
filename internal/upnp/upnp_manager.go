@@ -231,20 +231,23 @@ func (um *UPnPManager) GetPortMappings() map[string]*PortMapping {
 	um.mutex.RLock()
 	defer um.mutex.RUnlock()
 
-	result := make(map[string]*PortMapping)
+	mappings := make(map[string]*PortMapping)
 	for key, mapping := range um.mappings {
-		result[key] = &PortMapping{
-			InternalPort:   mapping.InternalPort,
-			ExternalPort:   mapping.ExternalPort,
-			Protocol:       mapping.Protocol,
-			InternalClient: mapping.InternalClient,
-			Description:    mapping.Description,
-			LeaseDuration:  mapping.LeaseDuration,
-			CreatedAt:      mapping.CreatedAt,
-		}
+		mappings[key] = mapping
 	}
+	return mappings
+}
 
-	return result
+// GetClientCount 获取UPnP客户端数量
+func (um *UPnPManager) GetClientCount() int {
+	um.mutex.RLock()
+	defer um.mutex.RUnlock()
+	return len(um.clients)
+}
+
+// IsUPnPAvailable 检查UPnP服务是否可用
+func (um *UPnPManager) IsUPnPAvailable() bool {
+	return um.GetClientCount() > 0
 }
 
 // CleanupExpiredMappings 清理过期的端口映射

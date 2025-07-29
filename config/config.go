@@ -13,6 +13,7 @@ type Config struct {
 	Network   NetworkConfig   `mapstructure:"network"`
 	Log       LogConfig       `mapstructure:"log"`
 	Monitor   MonitorConfig   `mapstructure:"monitor"`
+	Admin     AdminConfig     `mapstructure:"admin"`
 }
 
 // PortRangeConfig 端口范围配置
@@ -50,6 +51,15 @@ type MonitorConfig struct {
 	CheckInterval   time.Duration `mapstructure:"check_interval"`
 	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
 	MaxMappings     int           `mapstructure:"max_mappings"`
+}
+
+// AdminConfig 管理服务配置
+type AdminConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Host     string `mapstructure:"host"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	DataDir  string `mapstructure:"data_dir"`
 }
 
 // LoadConfig 加载配置文件
@@ -100,6 +110,13 @@ func setDefaults() {
 	viper.SetDefault("monitor.check_interval", "30s")
 	viper.SetDefault("monitor.cleanup_interval", "5m")
 	viper.SetDefault("monitor.max_mappings", 100)
+
+	// 管理服务默认值
+	viper.SetDefault("admin.enabled", true)
+	viper.SetDefault("admin.host", "0.0.0.0")
+	viper.SetDefault("admin.username", "admin")
+	viper.SetDefault("admin.password", "admin")
+	viper.SetDefault("admin.data_dir", "data")
 }
 
 // GetPortRange 获取端口范围列表

@@ -201,6 +201,14 @@ monitor:
   check_interval: 30s       # 端口状态检查间隔
   cleanup_interval: 5m      # 清理无效映射间隔
   max_mappings: 100         # 最大端口映射数量
+
+# 管理员配置
+admin:
+  enabled: true
+  username: "admin"
+  password: "admin"
+  host: "0.0.0.0"
+  data_dir: "data"
 EOF
 
     # 设置配置文件权限
@@ -235,8 +243,8 @@ ExecStart=${BINARY_PATH} -config ${CONFIG_FILE}
 ExecReload=/bin/kill -HUP \$MAINPID
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
+StandardOutput=null
+StandardError=null
 SyslogIdentifier=auto-upnp
 
 # 安全设置
@@ -263,7 +271,10 @@ setup_logging() {
     # 创建日志目录
     mkdir -p /var/log
     touch /var/log/auto-upnp.log
-    chmod 644 /var/log/auto-upnp.log
+    chmod 666 /var/log/auto-upnp.log
+    
+    # 确保日志文件可以被服务写入
+    chown root:root /var/log/auto-upnp.log
     
     log_info "日志目录设置完成"
 }
@@ -292,6 +303,7 @@ show_completion_info() {
     echo "  重启服务: systemctl restart ${SERVICE_NAME}"
     echo "  查看状态: systemctl status ${SERVICE_NAME}"
     echo "  查看日志: journalctl -u ${SERVICE_NAME} -f"
+    echo "  查看文件日志: tail -f /var/log/auto-upnp.log"
     echo "  开机自启: systemctl enable ${SERVICE_NAME}"
     echo "  禁用自启: systemctl disable ${SERVICE_NAME}"
     echo
