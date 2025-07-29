@@ -15,10 +15,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// 版本信息，通过编译时注入
 var (
-	configFile = flag.String("config", "config.yaml", "配置文件路径")
-	logLevel   = flag.String("log-level", "info", "日志级别 (debug, info, warn, error)")
-	showHelp   = flag.Bool("help", false, "显示帮助信息")
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
+var (
+	configFile  = flag.String("config", "config.yaml", "配置文件路径")
+	logLevel    = flag.String("log-level", "info", "日志级别 (debug, info, warn, error)")
+	showHelp    = flag.Bool("help", false, "显示帮助信息")
+	showVersion = flag.Bool("version", false, "显示版本信息")
 )
 
 func main() {
@@ -26,6 +34,11 @@ func main() {
 
 	if *showHelp {
 		showUsage()
+		return
+	}
+
+	if *showVersion {
+		showVersionInfo()
 		return
 	}
 
@@ -118,4 +131,10 @@ func showUsage() {
 	fmt.Println("  3. 支持手动端口映射管理")
 	fmt.Println("  4. 自动清理过期的端口映射")
 	fmt.Println("  5. 实时状态监控和日志记录")
+}
+
+func showVersionInfo() {
+	fmt.Printf("自动UPnP服务 v%s\n", version)
+	fmt.Printf("提交: %s\n", commit)
+	fmt.Printf("构建时间: %s\n", date)
 }
