@@ -48,8 +48,23 @@ check_root() {
     fi
 }
 
-# 检测系统架构
-detect_arch() {
+# 检测系统平台
+detect_platform() {
+    # 检测操作系统类型
+    case "$(uname -s)" in
+        Linux)
+            OS="linux"
+            ;;
+        Darwin)
+            OS="darwin"
+            ;;
+        *)
+            log_error "不支持的操作系统: $(uname -s)"
+            exit 1
+            ;;
+    esac
+    
+    # 检测系统架构
     case "$(uname -m)" in
         x86_64)
             ARCH="amd64"
@@ -57,14 +72,14 @@ detect_arch() {
         aarch64|arm64)
             ARCH="arm64"
             ;;
-        armv7l)
-            ARCH="armv7"
-            ;;
         *)
             log_error "不支持的架构: $(uname -m)"
+            log_error "支持的架构: amd64, arm64"
             exit 1
             ;;
     esac
+    
+    log_info "检测到平台: ${OS}/${ARCH}"
 }
 
 # 获取最新版本
@@ -88,7 +103,7 @@ download_binary() {
     log_step "下载二进制文件..."
     
     # 构建下载URL
-    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${ARCH}"
+    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/auto-upnp-${OS}-${ARCH}"
     
     log_info "下载地址: ${DOWNLOAD_URL}"
     
@@ -157,8 +172,8 @@ generate_config() {
 
 # 端口监听范围配置
 port_range:
-  start: 8000      # 起始端口
-  end: 9000        # 结束端口
+  start: 18000      # 起始端口
+  end: 19000        # 结束端口
   step: 1          # 端口间隔
 
 # UPnP配置
@@ -296,9 +311,8 @@ main() {
     # 检查root权限
     check_root
     
-    # 检测系统架构
-    detect_arch
-    log_info "检测到架构: ${ARCH}"
+    # 检测系统平台
+    detect_platform
     
     # 获取最新版本
     get_latest_version
