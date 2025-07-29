@@ -91,10 +91,10 @@ jobs:
             ### 快速安装
             ```bash
             # 下载并运行安装脚本
-            curl -fsSL https://raw.githubusercontent.com/javen-yan/auto-upnp/main/install.sh | sudo bash
+            curl -fsSL https://raw.githubusercontent.com/javen-yan/auto-upnp/master/install.sh | sudo bash
             ```
             
             ### 平台支持
             - Linux (amd64, arm64)
             - macOS (amd64, arm64)
-            - Windows (amd64) 
+            - Windows (amd64)
