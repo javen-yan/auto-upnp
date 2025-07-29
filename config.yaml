@@ -1,0 +1,33 @@
+# 自动UPnP服务配置文件
+
+# 端口监听范围配置
+port_range:
+  start: 8000      # 起始端口
+  end: 9000        # 结束端口
+  step: 1          # 端口间隔
+
+# UPnP配置
+upnp:
+  discovery_timeout: 10s    # 设备发现超时时间
+  mapping_duration: 1h      # 端口映射持续时间，0表示永久
+  retry_attempts: 3         # 重试次数
+  retry_delay: 5s           # 重试延迟
+
+# 网络接口配置
+network:
+  preferred_interfaces: ["eth0", "wlan0"]  # 优先使用的网络接口
+  exclude_interfaces: ["lo", "docker"]     # 排除的网络接口
+
+# 日志配置
+log:
+  level: "info"
+  format: "json"
+  file: "auto_upnp.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+# 监控配置
+monitor:
+  check_interval: 30s       # 端口状态检查间隔
+  cleanup_interval: 5m      # 清理无效映射间隔
+  max_mappings: 100         # 最大端口映射数量 
