@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -67,18 +71,94 @@ jobs:
           cp config.yaml release/config.yaml.example
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: |
-            release/auto-upnp-linux-amd64
-            release/auto-upnp-linux-arm64
-            release/auto-upnp-darwin-amd64
-            release/auto-upnp-darwin-arm64
-            release/auto-upnp-windows-amd64.exe
-            release/install.sh
-            release/config.yaml.example
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body: |
+            ## 自动UPnP服务 Release
+            
+            ### 快速安装
+            ```bash
+            # 下载并运行安装脚本
+            curl -fsSL https://raw.githubusercontent.com/javen-yan/auto-upnp/main/install.sh | sudo bash
+            ```
+            
+            ### 平台支持
+            - Linux (amd64, arm64)
+            - macOS (amd64, arm64)
+            - Windows (amd64)
+
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/auto-upnp-linux-amd64
+          asset_name: auto-upnp-linux-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets - Linux ARM64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/auto-upnp-linux-arm64
+          asset_name: auto-upnp-linux-arm64
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets - Darwin AMD64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/auto-upnp-darwin-amd64
+          asset_name: auto-upnp-darwin-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets - Darwin ARM64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/auto-upnp-darwin-arm64
+          asset_name: auto-upnp-darwin-arm64
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets - Windows AMD64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/auto-upnp-windows-amd64.exe
+          asset_name: auto-upnp-windows-amd64.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Assets - Install Script
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/install.sh
+          asset_name: install.sh
+          asset_content_type: text/x-shellscript
+
+      - name: Upload Release Assets - Config Example
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/config.yaml.example
+          asset_name: config.yaml.example
+          asset_content_type: text/yaml 
