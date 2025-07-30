@@ -2,10 +2,10 @@ package portmonitor
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"sync"
 	"time"
+
+	"auto-upnp/internal/util"
 
 	"github.com/sirupsen/logrus"
 )
@@ -40,7 +40,7 @@ type Config struct {
 }
 
 // AutoPortStatusCallback 自动端口状态变化回调函数
-type AutoPortStatusCallback func(port int, isActive bool)
+type AutoPortStatusCallback func(port int, isActive bool, protocol util.ProtocolType)
 
 // NewAutoPortMonitor 创建新的自动端口监控器
 func NewAutoPortMonitor(config *Config, logger *logrus.Logger) *AutoPortMonitor {
@@ -125,7 +125,7 @@ func (apm *AutoPortMonitor) checkAllPorts() {
 
 // checkPort 检查单个端口状态
 func (apm *AutoPortMonitor) checkPort(port int) {
-	isActive := apm.isPortActive(port)
+	portStatus := util.IsPortActive(port)
 
 	apm.mutex.Lock()
 	status, exists := apm.portStatus[port]
@@ -135,44 +135,29 @@ func (apm *AutoPortMonitor) checkPort(port int) {
 	}
 
 	// 检查状态是否发生变化
-	statusChanged := status.IsActive != isActive
+	statusChanged := status.IsActive != portStatus.Open
 
-	if isActive {
+	if portStatus.Open {
 		status.LastSeen = time.Now()
 	}
 
-	status.IsActive = isActive
+	status.IsActive = portStatus.Open
 	apm.mutex.Unlock()
 
 	// 如果状态发生变化，触发回调
 	if statusChanged {
 		apm.logger.WithFields(logrus.Fields{
 			"port":     port,
-			"isActive": isActive,
+			"protocol": portStatus.Protocol,
+			"isActive": portStatus.Open,
 		}).Info("自动端口状态发生变化")
 
-		apm.triggerCallbacks(port, isActive)
+		apm.triggerCallbacks(port, portStatus.Open, portStatus.Protocol)
 	}
-}
-
-// isPortActive 检查端口是否活跃
-func (apm *AutoPortMonitor) isPortActive(port int) bool {
-	address := fmt.Sprintf(":%d", port)
-
-	// 尝试监听端口
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		// 端口被占用，说明有服务在运行
-		return true
-	}
-
-	// 端口可用，关闭监听器
-	listener.Close()
-	return false
 }
 
 // triggerCallbacks 触发回调函数
-func (apm *AutoPortMonitor) triggerCallbacks(port int, isActive bool) {
+func (apm *AutoPortMonitor) triggerCallbacks(port int, isActive bool, protocol util.ProtocolType) {
 	apm.mutex.RLock()
 	callbacks := make([]AutoPortStatusCallback, len(apm.callbacks))
 	copy(callbacks, apm.callbacks)
@@ -185,7 +170,7 @@ func (apm *AutoPortMonitor) triggerCallbacks(port int, isActive bool) {
 					apm.logger.WithField("error", r).Error("自动端口状态回调函数执行出错")
 				}
 			}()
-			cb(port, isActive)
+			cb(port, isActive, protocol)
 		}(callback)
 	}
 }
@@ -274,15 +259,4 @@ func (apm *AutoPortMonitor) getStatusFromPool() *AutoPortStatus {
 		return apm.statusPool.Get().(*AutoPortStatus)
 	}
 	return &AutoPortStatus{}
-}
-
-// putStatusToPool 将状态对象放回对象池
-func (apm *AutoPortMonitor) putStatusToPool(status *AutoPortStatus) {
-	if apm.config.EnablePool {
-		// 重置状态
-		status.Port = 0
-		status.IsActive = false
-		status.LastSeen = time.Time{}
-		apm.statusPool.Put(status)
-	}
 }

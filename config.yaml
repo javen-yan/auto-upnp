@@ -3,7 +3,7 @@
 # 端口监听范围配置
 port_range:
   start: 18000      # 起始端口
-  end: 19000        # 结束端口
+  end: 18002        # 结束端口
   step: 1          # 端口间隔
 
 # UPnP配置
@@ -15,21 +15,17 @@ upnp:
   health_check_interval: 1m # 健康检查间隔
   max_fail_count: 3         # 最大失败次数
   keep_alive_interval: 2m   # 保活间隔
-  max_cache_size: 10        # 最大缓存大小
-  cache_ttl: 10m            # 缓存TTL
-  enable_retry: true        # 启用重试机制
-  retry_max_attempts: 5     # 最大重试次数
-  retry_backoff_factor: 2.0 # 重试退避因子
 
 # NAT穿透配置
 nat_traversal:
   enabled: true            # 是否启用NAT穿透功能
-  use_stun: true            # 启用STUN服务器
-  stun_servers:             # STUN服务器列表
-    - stun.miwifi.com
-    - stun.chat.bilibili.com
-    - stun.hitv.com
-    - stun.cdnbye.com
+  use_turn: true            # 启用TURN服务器
+  turn_servers:             # TURN服务器列表
+    - host: 47.104.139.35
+      port: 3478
+      username: "admin"
+      password: "Flzx3qc@2025"
+      realm: "turn.ealine.cn"
 
 # 网络接口配置
 network:
@@ -38,7 +34,7 @@ network:
 
 # 日志配置
 log:
-  level: "info"
+  level: "debug"
   format: "json"
   file: "auto_upnp.log"
   max_size: 10485760  # 10MB
@@ -48,8 +44,6 @@ log:
 monitor:
   check_interval: 30s       # 端口状态检查间隔
   cleanup_interval: 5m      # 清理无效映射间隔
-  max_mappings: 100         # 最大端口映射数量
-  enable_pool: true         # 启用对象池优化
 
 # 管理服务配置
 admin:

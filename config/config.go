@@ -33,11 +33,6 @@ type UPnPConfig struct {
 	HealthCheckInterval time.Duration `mapstructure:"health_check_interval"`
 	MaxFailCount        int           `mapstructure:"max_fail_count"`
 	KeepAliveInterval   time.Duration `mapstructure:"keep_alive_interval"`
-	MaxCacheSize        int           `mapstructure:"max_cache_size"`
-	CacheTTL            time.Duration `mapstructure:"cache_ttl"`
-	EnableRetry         bool          `mapstructure:"enable_retry"`
-	RetryMaxAttempts    int           `mapstructure:"retry_max_attempts"`
-	RetryBackoffFactor  float64       `mapstructure:"retry_backoff_factor"`
 }
 
 // NetworkConfig 网络配置
@@ -59,7 +54,6 @@ type LogConfig struct {
 type MonitorConfig struct {
 	CheckInterval   time.Duration `mapstructure:"check_interval"`
 	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
-	MaxMappings     int           `mapstructure:"max_mappings"`
 }
 
 // AdminConfig 管理服务配置
@@ -73,9 +67,19 @@ type AdminConfig struct {
 
 // NATTraversalConfig NAT穿透配置
 type NATTraversalConfig struct {
-	Enabled     bool     `mapstructure:"enabled"`
-	UseSTUN     bool     `mapstructure:"use_stun"`
-	STUNServers []string `mapstructure:"stun_servers"`
+	Enabled     bool            `mapstructure:"enabled"`
+	UseTURN     bool            `mapstructure:"use_turn"`
+	TURNServers []TURNServer    `mapstructure:"turn_servers"`
+	PortRange   PortRangeConfig `mapstructure:"port_range"`
+}
+
+// TURNServer TURN服务器配置
+type TURNServer struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Realm    string `mapstructure:"realm"`
 }
 
 // LoadConfig 加载配置文件
@@ -113,11 +117,6 @@ func setDefaults() {
 	viper.SetDefault("upnp.health_check_interval", "1m")
 	viper.SetDefault("upnp.max_fail_count", 3)
 	viper.SetDefault("upnp.keep_alive_interval", "2m")
-	viper.SetDefault("upnp.max_cache_size", 1000)
-	viper.SetDefault("upnp.cache_ttl", "1h")
-	viper.SetDefault("upnp.enable_retry", true)
-	viper.SetDefault("upnp.retry_max_attempts", 5)
-	viper.SetDefault("upnp.retry_backoff_factor", 2.0)
 
 	// 网络默认值
 	viper.SetDefault("network.preferred_interfaces", []string{"eth0", "wlan0"})
@@ -144,13 +143,18 @@ func setDefaults() {
 
 	// NAT穿透默认值
 	viper.SetDefault("nat_traversal.enabled", false)
-	viper.SetDefault("nat_traversal.use_stun", true)
-	viper.SetDefault("nat_traversal.stun_servers", []string{
-		"stun.miwifi.com",
-		"stun.chat.bilibili.com",
-		"stun.hitv.com",
-		"stun.cdnbye.com",
+	viper.SetDefault("nat_traversal.use_turn", true)
+	viper.SetDefault("nat_traversal.turn_servers", []map[string]interface{}{
+		{
+			"host":     "47.104.139.35",
+			"port":     3478,
+			"username": "admin",
+			"password": "Flzx@2025",
+			"realm":    "turn.ealine.cn",
+		},
 	})
+	viper.SetDefault("nat_traversal.port_range.start", 49152)
+	viper.SetDefault("nat_traversal.port_range.end", 65535)
 }
 
 // GetPortRange 获取端口范围列表

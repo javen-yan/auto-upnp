@@ -31,7 +31,6 @@ type UPnPClientInfo struct {
 	LastSeen   time.Time
 	IsHealthy  bool
 	FailCount  int
-	LastUsed   time.Time // 添加最后使用时间用于LRU缓存
 }
 
 // UPnPManager UPnP管理器
@@ -45,12 +44,6 @@ type UPnPManager struct {
 	config       *Config
 	discovered   bool
 	healthTicker *time.Ticker
-
-	// 添加缓存和连接池
-	clientCache  map[string]*UPnPClientInfo // 客户端缓存
-	cacheMutex   sync.RWMutex
-	maxCacheSize int
-	cacheTTL     time.Duration
 }
 
 // Config UPnP配置
@@ -59,12 +52,9 @@ type Config struct {
 	MappingDuration     time.Duration
 	RetryAttempts       int
 	RetryDelay          time.Duration
-	MaxMappings         int
 	HealthCheckInterval time.Duration // 健康检查间隔
 	MaxFailCount        int           // 最大失败次数
 	KeepAliveInterval   time.Duration // 保活间隔
-	MaxCacheSize        int           // 最大缓存大小
-	CacheTTL            time.Duration // 缓存TTL
 }
 
 // NewUPnPManager 创建新的UPnP管理器
@@ -81,31 +71,18 @@ func NewUPnPManager(config *Config, logger *logrus.Logger) *UPnPManager {
 	if config.KeepAliveInterval == 0 {
 		config.KeepAliveInterval = 5 * time.Minute
 	}
-	if config.MaxCacheSize == 0 {
-		config.MaxCacheSize = 10
-	}
-	if config.CacheTTL == 0 {
-		config.CacheTTL = 10 * time.Minute
-	}
-
 	um := &UPnPManager{
-		logger:       logger,
-		clients:      make([]*UPnPClientInfo, 0),
-		ctx:          ctx,
-		cancel:       cancel,
-		mappings:     make(map[string]*PortMapping),
-		config:       config,
-		discovered:   false,
-		clientCache:  make(map[string]*UPnPClientInfo),
-		maxCacheSize: config.MaxCacheSize,
-		cacheTTL:     config.CacheTTL,
+		logger:     logger,
+		clients:    make([]*UPnPClientInfo, 0),
+		ctx:        ctx,
+		cancel:     cancel,
+		mappings:   make(map[string]*PortMapping),
+		config:     config,
+		discovered: false,
 	}
 
 	// 启动健康检查协程
 	go um.healthCheckRoutine()
-
-	// 启动缓存清理协程
-	go um.cacheCleanupRoutine()
 
 	return um
 }
@@ -289,11 +266,6 @@ func (um *UPnPManager) Discover() error {
 func (um *UPnPManager) AddPortMapping(internalPort, externalPort int, protocol string, description string) error {
 	um.mutex.Lock()
 	defer um.mutex.Unlock()
-
-	// 检查映射数量限制
-	if len(um.mappings) >= um.config.MaxMappings {
-		return fmt.Errorf("端口映射数量已达到上限: %d", um.config.MaxMappings)
-	}
 
 	// 检查是否已存在映射
 	mappingKey := um.getMappingKey(internalPort, externalPort, protocol)
@@ -588,84 +560,9 @@ func (um *UPnPManager) Close() {
 	if um.healthTicker != nil {
 		um.healthTicker.Stop()
 	}
-}
 
-// getBestClient 获取最佳客户端（使用缓存和LRU策略）
-func (um *UPnPManager) getBestClient() (*UPnPClientInfo, error) {
-	um.cacheMutex.RLock()
-	defer um.cacheMutex.RUnlock()
-
-	// 查找健康的客户端
-	var bestClient *UPnPClientInfo
-	var oldestTime time.Time
-
-	for _, client := range um.clientCache {
-		if client.IsHealthy {
-			if bestClient == nil || client.LastUsed.Before(oldestTime) {
-				bestClient = client
-				oldestTime = client.LastUsed
-			}
-		}
-	}
-
-	if bestClient != nil {
-		bestClient.LastUsed = time.Now()
-		return bestClient, nil
-	}
-
-	return nil, fmt.Errorf("没有可用的健康UPnP客户端")
-}
-
-// addToCache 添加到缓存
-func (um *UPnPManager) addToCache(client *UPnPClientInfo) {
-	um.cacheMutex.Lock()
-	defer um.cacheMutex.Unlock()
-
-	// 如果缓存已满，删除最旧的条目
-	if len(um.clientCache) >= um.maxCacheSize {
-		var oldestKey string
-		var oldestTime time.Time
-
-		for key, cachedClient := range um.clientCache {
-			if oldestKey == "" || cachedClient.LastUsed.Before(oldestTime) {
-				oldestKey = key
-				oldestTime = cachedClient.LastUsed
-			}
-		}
-
-		if oldestKey != "" {
-			delete(um.clientCache, oldestKey)
-		}
-	}
-
-	client.LastUsed = time.Now()
-	um.clientCache[client.URL] = client
-}
-
-// cacheCleanupRoutine 缓存清理协程
-func (um *UPnPManager) cacheCleanupRoutine() {
-	ticker := time.NewTicker(um.cacheTTL / 2)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-um.ctx.Done():
-			return
-		case <-ticker.C:
-			um.cleanupExpiredCache()
-		}
-	}
-}
-
-// cleanupExpiredCache 清理过期缓存
-func (um *UPnPManager) cleanupExpiredCache() {
-	um.cacheMutex.Lock()
-	defer um.cacheMutex.Unlock()
-
-	now := time.Now()
-	for key, client := range um.clientCache {
-		if now.Sub(client.LastUsed) > um.cacheTTL {
-			delete(um.clientCache, key)
-		}
+	// 移除所有映射
+	for _, mapping := range um.mappings {
+		um.RemovePortMapping(mapping.InternalPort, mapping.ExternalPort, mapping.Protocol)
 	}
 }
