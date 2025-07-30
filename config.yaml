@@ -21,6 +21,16 @@ upnp:
   retry_max_attempts: 5     # 最大重试次数
   retry_backoff_factor: 2.0 # 重试退避因子
 
+# NAT穿透配置
+nat_traversal:
+  enabled: true            # 是否启用NAT穿透功能
+  use_stun: true            # 启用STUN服务器
+  stun_servers:             # STUN服务器列表
+    - stun.miwifi.com
+    - stun.chat.bilibili.com
+    - stun.hitv.com
+    - stun.cdnbye.com
+
 # 网络接口配置
 network:
   preferred_interfaces: ["eth0", "wlan0"]  # 优先使用的网络接口

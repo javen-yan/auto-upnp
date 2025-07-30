@@ -15,6 +15,19 @@ type RemoveMappingRequest struct {
 	Protocol     string `json:"protocol"`
 }
 
+// CreateNATHoleRequest 创建NAT穿透洞请求
+type CreateNATHoleRequest struct {
+	InternalPort int    `json:"internal_port"`
+	Protocol     string `json:"protocol"`
+	Description  string `json:"description"`
+}
+
+// CloseNATHoleRequest 关闭NAT穿透洞请求
+type CloseNATHoleRequest struct {
+	InternalPort int    `json:"internal_port"`
+	Protocol     string `json:"protocol"`
+}
+
 // APIResponse API响应
 type APIResponse struct {
 	Status  string      `json:"status"`

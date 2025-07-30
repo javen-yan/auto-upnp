@@ -59,6 +59,10 @@ func (as *AdminServer) Start() error {
 	mux.HandleFunc("/api/remove-mapping", as.authMiddleware(as.handleRemoveMapping))
 	mux.HandleFunc("/api/ports", as.authMiddleware(as.handlePorts))
 	mux.HandleFunc("/api/upnp-status", as.authMiddleware(as.handleUPnPStatus))
+	mux.HandleFunc("/api/nat-status", as.authMiddleware(as.handleNATStatus))
+	mux.HandleFunc("/api/nat-holes", as.authMiddleware(as.handleNATHoles))
+	mux.HandleFunc("/api/create-nat-hole", as.authMiddleware(as.handleCreateNATHole))
+	mux.HandleFunc("/api/close-nat-hole", as.authMiddleware(as.handleCloseNATHole))
 
 	// 创建HTTP服务器
 	as.server = &http.Server{
@@ -165,6 +169,23 @@ func (as *AdminServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := as.autoService.GetStatus()
+
+	// 添加NAT状态信息
+	natStatus := map[string]interface{}{
+		"available": as.autoService.IsNATAvailable(),
+		"use_stun":  as.config.NATTraversal.UseSTUN,
+	}
+
+	// 添加外部地址信息
+	externalAddr := as.autoService.GetNATExternalAddress()
+	if externalAddr != nil {
+		natStatus["external_address"] = map[string]interface{}{
+			"ip":   externalAddr.IP.String(),
+			"port": externalAddr.Port,
+		}
+	}
+
+	status["nat_status"] = natStatus
 
 	// 添加管理服务信息
 	status["admin_service"] = map[string]interface{}{
@@ -379,6 +400,162 @@ func (as *AdminServer) handleUPnPStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	as.writeJSON(w, response)
+}
+
+// handleNATStatus 处理NAT穿透状态API
+func (as *AdminServer) handleNATStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		as.writeJSONResponse(w, http.StatusMethodNotAllowed, "方法不允许", nil)
+		return
+	}
+
+	isAvailable := as.autoService.IsNATAvailable()
+	status := "不可用"
+	if isAvailable {
+		status = "可用"
+	}
+
+	response := map[string]interface{}{
+		"available": isAvailable,
+		"status":    status,
+		"use_stun":  as.config.NATTraversal.UseSTUN,
+	}
+
+	as.writeJSON(w, response)
+}
+
+// handleNATHoles 处理NAT穿透洞API
+func (as *AdminServer) handleNATHoles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		as.writeJSONResponse(w, http.StatusMethodNotAllowed, "方法不允许", nil)
+		return
+	}
+
+	holes := as.autoService.GetNATHoles()
+
+	// 转换holes数据，确保RemoteAddr被正确序列化
+	responseHoles := make(map[string]interface{})
+	for key, hole := range holes {
+		holeData := map[string]interface{}{
+			"LocalPort":    hole.LocalPort,
+			"Protocol":     hole.Protocol,
+			"Description":  hole.Description,
+			"CreatedAt":    hole.CreatedAt,
+			"LastActivity": hole.LastActivity,
+			"IsActive":     hole.IsActive,
+		}
+
+		// 添加RemoteAddr信息
+		if hole.RemoteAddr != nil {
+			if udpAddr, ok := hole.RemoteAddr.(*net.UDPAddr); ok {
+				holeData["RemoteAddr"] = map[string]interface{}{
+					"IP":   udpAddr.IP.String(),
+					"Port": udpAddr.Port,
+					"Zone": udpAddr.Zone,
+				}
+			} else {
+				holeData["RemoteAddr"] = map[string]interface{}{
+					"String": hole.RemoteAddr.String(),
+				}
+			}
+		}
+
+		responseHoles[key] = holeData
+	}
+
+	response := map[string]interface{}{
+		"holes": responseHoles,
+	}
+
+	as.writeJSON(w, response)
+}
+
+// handleCreateNATHole 处理创建NAT穿透洞API
+func (as *AdminServer) handleCreateNATHole(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		as.writeJSONResponse(w, http.StatusMethodNotAllowed, "方法不允许", nil)
+		return
+	}
+
+	// 设置响应头
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	// 读取请求体
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		as.writeJSONResponse(w, http.StatusBadRequest, "读取请求体失败", nil)
+		return
+	}
+	defer r.Body.Close()
+
+	// 解析JSON请求
+	var req CreateNATHoleRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		as.writeJSONResponse(w, http.StatusBadRequest, "JSON格式错误", nil)
+		return
+	}
+
+	// 验证必填字段
+	if req.InternalPort <= 0 || req.InternalPort > 65535 {
+		as.writeJSONResponse(w, http.StatusBadRequest, "内部端口格式错误", nil)
+		return
+	}
+
+	if req.Protocol == "" {
+		req.Protocol = "TCP"
+	}
+
+	if err := as.autoService.CreateNATHole(req.InternalPort, req.Protocol, req.Description); err != nil {
+		as.logger.WithError(err).Error("创建NAT穿透洞失败")
+		as.writeJSONResponse(w, http.StatusInternalServerError, fmt.Sprintf("创建NAT穿透洞失败: %v", err), nil)
+		return
+	}
+
+	as.writeJSONResponse(w, http.StatusOK, "NAT穿透洞创建成功", nil)
+}
+
+// handleCloseNATHole 处理关闭NAT穿透洞API
+func (as *AdminServer) handleCloseNATHole(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		as.writeJSONResponse(w, http.StatusMethodNotAllowed, "方法不允许", nil)
+		return
+	}
+
+	// 设置响应头
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	// 读取请求体
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		as.writeJSONResponse(w, http.StatusBadRequest, "读取请求体失败", nil)
+		return
+	}
+	defer r.Body.Close()
+
+	// 解析JSON请求
+	var req CloseNATHoleRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		as.writeJSONResponse(w, http.StatusBadRequest, "JSON格式错误", nil)
+		return
+	}
+
+	// 验证必填字段
+	if req.InternalPort <= 0 || req.InternalPort > 65535 {
+		as.writeJSONResponse(w, http.StatusBadRequest, "内部端口格式错误", nil)
+		return
+	}
+
+	if req.Protocol == "" {
+		req.Protocol = "TCP"
+	}
+
+	if err := as.autoService.CloseNATHole(req.InternalPort, req.Protocol); err != nil {
+		as.logger.WithError(err).Error("关闭NAT穿透洞失败")
+		as.writeJSONResponse(w, http.StatusInternalServerError, fmt.Sprintf("关闭NAT穿透洞失败: %v", err), nil)
+		return
+	}
+
+	as.writeJSONResponse(w, http.StatusOK, "NAT穿透洞关闭成功", nil)
 }
 
 // writeJSON 写入JSON响应

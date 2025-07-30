@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
 	"auto-upnp/config"
+	"auto-upnp/internal/nat_traversal"
 	"auto-upnp/internal/portmonitor"
 	"auto-upnp/internal/upnp"
 
@@ -21,11 +23,14 @@ type AutoUPnPService struct {
 	manualPortMonitor *portmonitor.ManualPortMonitor
 	upnpManager       *upnp.UPnPManager
 	manualManager     *ManualMappingManager
+	natTraversal      *nat_traversal.NATTraversal
 	ctx               context.Context
 	cancel            context.CancelFunc
 	wg                sync.WaitGroup
 	activeMappings    map[int]bool
 	mappingMutex      sync.RWMutex
+	activeHoles       map[int]bool
+	holesMutex        sync.RWMutex
 }
 
 // NewAutoUPnPService 创建新的自动UPnP服务
@@ -35,13 +40,24 @@ func NewAutoUPnPService(cfg *config.Config, logger *logrus.Logger) *AutoUPnPServ
 	// 创建手动映射管理器，使用admin.data_dir
 	manualManager := NewManualMappingManager(cfg.Admin.DataDir, logger)
 
+	// 创建NAT穿透管理器
+	natConfig := &nat_traversal.NATTraversalConfig{
+		Enabled:     cfg.NATTraversal.Enabled,
+		UseSTUN:     cfg.NATTraversal.UseSTUN,
+		STUNServers: cfg.NATTraversal.STUNServers,
+	}
+
+	natTraversal := nat_traversal.NewNATTraversal(natConfig, logger)
+
 	return &AutoUPnPService{
 		config:         cfg,
 		logger:         logger,
 		manualManager:  manualManager,
+		natTraversal:   natTraversal,
 		ctx:            ctx,
 		cancel:         cancel,
 		activeMappings: make(map[int]bool),
+		activeHoles:    make(map[int]bool),
 	}
 }
 
@@ -99,6 +115,20 @@ func (as *AutoUPnPService) Start() error {
 	// 启动手动端口监控
 	as.manualPortMonitor.Start()
 
+	// 启动NAT穿透服务
+	if as.config.NATTraversal.Enabled {
+		if err := as.natTraversal.Start(); err != nil {
+			as.logger.WithError(err).Warn("启动NAT穿透服务失败")
+		} else {
+			// 设置NAT穿透回调
+			as.natTraversal.SetCallbacks(
+				as.onHoleCreated,
+				as.onHoleClosed,
+				as.onHoleFailed,
+			)
+		}
+	}
+
 	// 启动清理协程
 	as.wg.Add(1)
 	go as.cleanupRoutine()
@@ -130,6 +160,11 @@ func (as *AutoUPnPService) Stop() {
 		as.manualPortMonitor.Stop()
 	}
 
+	// 停止NAT穿透服务
+	if as.natTraversal != nil {
+		as.natTraversal.Stop()
+	}
+
 	// 取消上下文
 	as.cancel()
 
@@ -151,45 +186,65 @@ func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool) {
 
 	// 处理自动映射
 	if isActive {
-		// 端口变为活跃状态，添加UPnP映射
+		// 端口变为活跃状态，尝试多种映射方式
 		if !as.activeMappings[port] {
-			as.logger.WithField("port", port).Info("检测到自动端口上线，添加UPnP映射")
+			as.logger.WithField("port", port).Info("检测到自动端口上线，尝试端口映射")
 
+			// 首先尝试UPnP映射
 			description := fmt.Sprintf("AutoUPnP-%d", port)
 			err := as.upnpManager.AddPortMapping(port, port, "TCP", description)
 			if err != nil {
 				as.logger.WithFields(logrus.Fields{
 					"port":  port,
 					"error": err,
-				}).Error("添加自动UPnP端口映射失败")
+				}).Warn("UPnP映射失败，尝试NAT穿透")
 
-				// 添加重试机制
-				go as.retryAddMapping(port, description)
+				// UPnP失败，尝试NAT穿透
+				if as.config.NATTraversal.Enabled {
+					if err := as.natTraversal.CreateHole(port, "TCP", description); err != nil {
+						as.logger.WithFields(logrus.Fields{
+							"port":  port,
+							"error": err,
+						}).Error("NAT穿透也失败")
+					} else {
+						as.logger.WithField("port", port).Info("NAT穿透映射成功")
+					}
+				} else {
+					// 添加重试机制
+					go as.retryAddMapping(port, description)
+				}
 				return
 			}
 
 			as.activeMappings[port] = true
-			as.logger.WithField("port", port).Info("自动UPnP端口映射添加成功")
+			as.logger.WithField("port", port).Info("UPnP端口映射添加成功")
 		}
 	} else {
-		// 端口变为非活跃状态，删除UPnP映射
+		// 端口变为非活跃状态，删除映射
 		if as.activeMappings[port] {
-			as.logger.WithField("port", port).Info("检测到自动端口下线，删除UPnP映射")
+			as.logger.WithField("port", port).Info("检测到自动端口下线，删除映射")
 
+			// 删除UPnP映射
 			err := as.upnpManager.RemovePortMapping(port, port, "TCP")
 			if err != nil {
 				as.logger.WithFields(logrus.Fields{
 					"port":  port,
 					"error": err,
-				}).Error("删除自动UPnP端口映射失败")
+				}).Warn("删除UPnP映射失败")
+			}
 
-				// 添加重试机制
-				go as.retryRemoveMapping(port)
-				return
+			// 删除NAT穿透映射
+			if as.config.NATTraversal.Enabled {
+				if err := as.natTraversal.CloseHole(port, "TCP"); err != nil {
+					as.logger.WithFields(logrus.Fields{
+						"port":  port,
+						"error": err,
+					}).Warn("删除NAT穿透映射失败")
+				}
 			}
 
 			delete(as.activeMappings, port)
-			as.logger.WithField("port", port).Info("自动UPnP端口映射删除成功")
+			as.logger.WithField("port", port).Info("端口映射删除完成")
 		}
 	}
 }
@@ -223,84 +278,8 @@ func (as *AutoUPnPService) retryAddMapping(port int, description string) {
 	as.logger.WithField("port", port).Error("重试添加UPnP映射最终失败")
 }
 
-// retryRemoveMapping 重试删除映射
-func (as *AutoUPnPService) retryRemoveMapping(port int) {
-	maxRetries := 3
-	retryDelay := time.Second * 5
-
-	for i := 0; i < maxRetries; i++ {
-		time.Sleep(retryDelay)
-
-		err := as.upnpManager.RemovePortMapping(port, port, "TCP")
-		if err == nil {
-			as.mappingMutex.Lock()
-			delete(as.activeMappings, port)
-			as.mappingMutex.Unlock()
-
-			as.logger.WithField("port", port).Info("重试删除UPnP映射成功")
-			return
-		}
-
-		as.logger.WithFields(logrus.Fields{
-			"port":       port,
-			"attempt":    i + 1,
-			"maxRetries": maxRetries,
-			"error":      err,
-		}).Warn("重试删除UPnP映射失败")
-	}
-
-	as.logger.WithField("port", port).Error("重试删除UPnP映射最终失败")
-}
-
 // onManualPortStatusChanged 手动端口状态变化回调
 func (as *AutoUPnPService) onManualPortStatusChanged(port int, isActive bool, protocol string) {
-	// 处理手动映射的激活状态
-	as.handleManualMappingStatus(port, isActive)
-}
-
-// onPortStatusChanged 端口状态变化回调（保持兼容性）
-func (as *AutoUPnPService) onPortStatusChanged(port int, isActive bool) {
-	as.mappingMutex.Lock()
-	defer as.mappingMutex.Unlock()
-
-	// 处理自动映射
-	if isActive {
-		// 端口变为活跃状态，添加UPnP映射
-		if !as.activeMappings[port] {
-			as.logger.WithField("port", port).Info("检测到端口上线，添加UPnP映射")
-
-			description := fmt.Sprintf("AutoUPnP-%d", port)
-			err := as.upnpManager.AddPortMapping(port, port, "TCP", description)
-			if err != nil {
-				as.logger.WithFields(logrus.Fields{
-					"port":  port,
-					"error": err,
-				}).Error("添加UPnP端口映射失败")
-				return
-			}
-
-			as.activeMappings[port] = true
-			as.logger.WithField("port", port).Info("UPnP端口映射添加成功")
-		}
-	} else {
-		// 端口变为非活跃状态，删除UPnP映射
-		if as.activeMappings[port] {
-			as.logger.WithField("port", port).Info("检测到端口下线，删除UPnP映射")
-
-			err := as.upnpManager.RemovePortMapping(port, port, "TCP")
-			if err != nil {
-				as.logger.WithFields(logrus.Fields{
-					"port":  port,
-					"error": err,
-				}).Error("删除UPnP端口映射失败")
-				return
-			}
-
-			delete(as.activeMappings, port)
-			as.logger.WithField("port", port).Info("UPnP端口映射删除成功")
-		}
-	}
-
 	// 处理手动映射的激活状态
 	as.handleManualMappingStatus(port, isActive)
 }
@@ -765,4 +744,106 @@ func (as *AutoUPnPService) GetUPnPClientCount() int {
 // IsUPnPAvailable 检查UPnP服务是否可用
 func (as *AutoUPnPService) IsUPnPAvailable() bool {
 	return as.GetUPnPClientCount() > 0
+}
+
+// onHoleFailed 打洞失败回调
+func (as *AutoUPnPService) onHoleFailed(port int, protocol string, err error) {
+	as.logger.WithFields(logrus.Fields{
+		"port":     port,
+		"protocol": protocol,
+		"error":    err,
+	}).Error("NAT穿透打洞失败")
+}
+
+// onHoleCreated 打洞创建回调
+func (as *AutoUPnPService) onHoleCreated(port int, protocol string) {
+	as.holesMutex.Lock()
+	defer as.holesMutex.Unlock()
+
+	as.activeHoles[port] = true
+	as.logger.WithFields(logrus.Fields{
+		"port":     port,
+		"protocol": protocol,
+	}).Info("NAT穿透打洞创建成功")
+}
+
+// onHoleClosed 打洞关闭回调
+func (as *AutoUPnPService) onHoleClosed(port int, protocol string) {
+	as.holesMutex.Lock()
+	defer as.holesMutex.Unlock()
+
+	delete(as.activeHoles, port)
+	as.logger.WithFields(logrus.Fields{
+		"port":     port,
+		"protocol": protocol,
+	}).Info("NAT穿透打洞关闭成功")
+}
+
+// GetNATTraversalStatus 获取NAT穿透状态
+func (as *AutoUPnPService) GetNATTraversalStatus() map[string]interface{} {
+	if !as.config.NATTraversal.Enabled {
+		return map[string]interface{}{
+			"enabled": false,
+		}
+	}
+
+	holes := as.natTraversal.GetHoles()
+	activeHoles := as.natTraversal.GetActiveHoles()
+
+	return map[string]interface{}{
+		"enabled":      true,
+		"use_stun":     as.config.NATTraversal.UseSTUN,
+		"total_holes":  len(holes),
+		"active_holes": len(activeHoles),
+		"holes":        holes,
+	}
+}
+
+// CreateNATHole 创建NAT穿透打洞
+func (as *AutoUPnPService) CreateNATHole(port int, protocol, description string) error {
+	if !as.config.NATTraversal.Enabled {
+		return fmt.Errorf("NAT穿透功能已禁用")
+	}
+
+	return as.natTraversal.CreateHole(port, protocol, description)
+}
+
+// CloseNATHole 关闭NAT穿透打洞
+func (as *AutoUPnPService) CloseNATHole(port int, protocol string) error {
+	if !as.config.NATTraversal.Enabled {
+		return fmt.Errorf("NAT穿透功能已禁用")
+	}
+
+	return as.natTraversal.CloseHole(port, protocol)
+}
+
+// GetNATHoles 获取所有NAT穿透打洞
+func (as *AutoUPnPService) GetNATHoles() map[string]*nat_traversal.HoleInfo {
+	if !as.config.NATTraversal.Enabled {
+		return make(map[string]*nat_traversal.HoleInfo)
+	}
+
+	return as.natTraversal.GetHoles()
+}
+
+// GetActiveNATHoles 获取活跃的NAT穿透打洞
+func (as *AutoUPnPService) GetActiveNATHoles() []*nat_traversal.HoleInfo {
+	if !as.config.NATTraversal.Enabled {
+		return []*nat_traversal.HoleInfo{}
+	}
+
+	return as.natTraversal.GetActiveHoles()
+}
+
+// IsNATAvailable 检查NAT穿透是否可用
+func (as *AutoUPnPService) IsNATAvailable() bool {
+	return as.config.NATTraversal.Enabled && as.natTraversal != nil
+}
+
+// GetNATExternalAddress 获取NAT穿透外部地址
+func (as *AutoUPnPService) GetNATExternalAddress() *net.UDPAddr {
+	if !as.config.NATTraversal.Enabled || as.natTraversal == nil {
+		return nil
+	}
+	return as.natTraversal.GetExternalAddress()
 }

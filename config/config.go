@@ -8,12 +8,13 @@ import (
 
 // Config 配置结构体
 type Config struct {
-	PortRange PortRangeConfig `mapstructure:"port_range"`
-	UPnP      UPnPConfig      `mapstructure:"upnp"`
-	Network   NetworkConfig   `mapstructure:"network"`
-	Log       LogConfig       `mapstructure:"log"`
-	Monitor   MonitorConfig   `mapstructure:"monitor"`
-	Admin     AdminConfig     `mapstructure:"admin"`
+	PortRange    PortRangeConfig    `mapstructure:"port_range"`
+	UPnP         UPnPConfig         `mapstructure:"upnp"`
+	Network      NetworkConfig      `mapstructure:"network"`
+	Log          LogConfig          `mapstructure:"log"`
+	Monitor      MonitorConfig      `mapstructure:"monitor"`
+	Admin        AdminConfig        `mapstructure:"admin"`
+	NATTraversal NATTraversalConfig `mapstructure:"nat_traversal"`
 }
 
 // PortRangeConfig 端口范围配置
@@ -68,6 +69,13 @@ type AdminConfig struct {
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
 	DataDir  string `mapstructure:"data_dir"`
+}
+
+// NATTraversalConfig NAT穿透配置
+type NATTraversalConfig struct {
+	Enabled     bool     `mapstructure:"enabled"`
+	UseSTUN     bool     `mapstructure:"use_stun"`
+	STUNServers []string `mapstructure:"stun_servers"`
 }
 
 // LoadConfig 加载配置文件
@@ -133,6 +141,16 @@ func setDefaults() {
 	viper.SetDefault("admin.username", "admin")
 	viper.SetDefault("admin.password", "admin")
 	viper.SetDefault("admin.data_dir", "data")
+
+	// NAT穿透默认值
+	viper.SetDefault("nat_traversal.enabled", false)
+	viper.SetDefault("nat_traversal.use_stun", true)
+	viper.SetDefault("nat_traversal.stun_servers", []string{
+		"stun.miwifi.com",
+		"stun.chat.bilibili.com",
+		"stun.hitv.com",
+		"stun.cdnbye.com",
+	})
 }
 
 // GetPortRange 获取端口范围列表

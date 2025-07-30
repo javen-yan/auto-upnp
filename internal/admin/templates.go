@@ -206,6 +206,22 @@ const adminHTML = `<!DOCTYPE html>
             background: #ff5252;
         }
         
+        .btn-success {
+            background: #4caf50;
+        }
+        
+        .btn-success:hover {
+            background: #45a049;
+        }
+        
+        .btn-warning {
+            background: #ff9800;
+        }
+        
+        .btn-warning:hover {
+            background: #f57c00;
+        }
+        
         .form-group {
             margin-bottom: 20px;
         }
@@ -312,6 +328,69 @@ const adminHTML = `<!DOCTYPE html>
             border-left-color: #4caf50;
         }
         
+        .message.warning {
+            background: #fff3e0;
+            color: #ef6c00;
+            border-left-color: #ff9800;
+        }
+        
+        .nat-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .nat-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        
+        .nat-indicator.enabled {
+            background: #4caf50;
+        }
+        
+        .nat-indicator.disabled {
+            background: #f44336;
+        }
+        
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            border-bottom: 2px solid #e1e5e9;
+            margin-bottom: 20px;
+        }
+        
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .tab-button.active {
+            color: #4facfe;
+            border-bottom-color: #4facfe;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
         @media (max-width: 768px) {
             .form-row {
                 grid-template-columns: 1fr;
@@ -323,6 +402,10 @@ const adminHTML = `<!DOCTYPE html>
             
             .ports-grid {
                 grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            }
+            
+            .tab-buttons {
+                flex-direction: column;
             }
         }
     </style>
@@ -343,22 +426,39 @@ const adminHTML = `<!DOCTYPE html>
                 </div>
             </div>
             
-            <!-- 手动映射管理 -->
+            <!-- 映射管理标签页 -->
             <div class="section">
-                <h2>手动映射管理</h2>
-                <div class="manual-mapping-stats" id="manualMappingStats">
-                    <div class="loading">加载中...</div>
-                </div>
-                <div id="manualMappingsTable">
-                    <div class="loading">加载中...</div>
-                </div>
-            </div>
-            
-            <!-- 自动端口映射 -->
-            <div class="section">
-                <h2>自动端口映射</h2>
-                <div id="mappingsTable">
-                    <div class="loading">加载中...</div>
+                <h2>映射管理</h2>
+                <div class="tab-container">
+                    <div class="tab-buttons">
+                        <button class="tab-button active" onclick="switchTab('manual')">手动映射</button>
+                        <button class="tab-button" onclick="switchTab('auto')">自动映射</button>
+                        <button class="tab-button" onclick="switchTab('nat')">STUN穿透</button>
+                    </div>
+                    
+                    <!-- 手动映射标签页 -->
+                    <div id="manualTab" class="tab-content active">
+                        <div class="manual-mapping-stats" id="manualMappingStats">
+                            <div class="loading">加载中...</div>
+                        </div>
+                        <div id="manualMappingsTable">
+                            <div class="loading">加载中...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 自动映射标签页 -->
+                    <div id="autoTab" class="tab-content">
+                        <div id="mappingsTable">
+                            <div class="loading">加载中...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- STUN穿透标签页 -->
+                    <div id="natTab" class="tab-content">
+                        <div id="natMappingsTable">
+                            <div class="loading">加载中...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -398,31 +498,92 @@ const adminHTML = `<!DOCTYPE html>
                     <button type="submit" class="btn">添加映射</button>
                 </form>
             </div>
+            
+            <!-- STUN穿透管理 -->
+            <div class="section">
+                <h2>STUN穿透管理</h2>
+                <form id="addNATHoleForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="natInternalPort">内部端口</label>
+                            <input type="number" id="natInternalPort" name="internal_port" min="1" max="65535" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="natProtocol">协议</label>
+                            <select id="natProtocol" name="protocol">
+                                <option value="TCP">TCP</option>
+                                <option value="UDP">UDP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="natDescription">描述</label>
+                            <input type="text" id="natDescription" name="description" placeholder="可选">
+                        </div>
+                        <div class="form-group">
+                            <label style="color: #666; font-size: 0.9em;">外部端口将由STUN自动协商</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success">创建STUN穿透</button>
+                </form>
+            </div>
         </div>
     </div>
 
     <script>
         // 全局变量
         let refreshInterval;
+        let currentTab = 'manual';
         
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadStatus();
             loadManualMappings();
             loadMappings();
+            loadNATHoles();
             loadPorts();
             
             // 设置定时刷新
             refreshInterval = setInterval(function() {
                 loadStatus();
                 loadManualMappings();
-                loadMappings();
+                if (currentTab === 'auto') {
+                    loadMappings();
+                } else if (currentTab === 'nat') {
+                    loadNATHoles();
+                }
                 loadPorts();
             }, 5000); // 每5秒刷新一次
             
             // 绑定表单提交事件
             document.getElementById('addMappingForm').addEventListener('submit', handleAddMapping);
+            document.getElementById('addNATHoleForm').addEventListener('submit', handleAddNATHole);
         });
+        
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新按钮状态
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 更新内容显示
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            
+            currentTab = tabName;
+            
+            // 加载对应数据
+            if (tabName === 'manual') {
+                loadManualMappings();
+            } else if (tabName === 'auto') {
+                loadMappings();
+            } else if (tabName === 'nat') {
+                loadNATHoles();
+            }
+        }
         
         // 加载服务状态
         async function loadStatus() {
@@ -458,14 +619,101 @@ const adminHTML = `<!DOCTYPE html>
                         '<div class="value">' + (data.upnp_status?.available ? '可用' : '不可用') + '</div>' +
                     '</div>' +
                     '<div class="status-card">' +
-                        '<h3>UPnP客户端</h3>' +
-                        '<div class="value">' + (data.upnp_status?.client_count || 0) + '</div>' +
+                        '<h3>STUN穿透</h3>' +
+                        '<div class="value">' + (data.nat_status?.available ? '可用' : '不可用') + '</div>' +
+                        (data.nat_status?.external_address ? 
+                            '<div style="font-size: 0.8em; margin-top: 5px; color: #666;">' +
+                                data.nat_status.external_address.ip + ':' + data.nat_status.external_address.port +
+                            '</div>' : '') +
                     '</div>';
             } catch (error) {
                 console.error('加载状态失败:', error);
                 const statusGrid = document.getElementById('statusGrid');
                 statusGrid.innerHTML = '<div class="error">加载状态失败: ' + error.message + '</div>';
                 showMessage('加载状态失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 加载STUN穿透洞列表
+        async function loadNATHoles() {
+            try {
+                const response = await fetch('/api/nat-holes');
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        showMessage('认证失败，请检查用户名和密码', 'error');
+                        return;
+                    }
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+                
+                const data = await response.json();
+                
+                const natMappingsTable = document.getElementById('natMappingsTable');
+                
+                if (!data.holes || Object.keys(data.holes).length === 0) {
+                    natMappingsTable.innerHTML = '<p>暂无STUN穿透洞</p>';
+                    return;
+                }
+                
+                let tableHTML = 
+                    '<table class="mappings-table">' +
+                        '<thead>' +
+                            '<tr>' +
+                                '<th>内部端口</th>' +
+                                '<th>协议</th>' +
+                                '<th>描述</th>' +
+                                '<th>外部地址</th>' +
+                                '<th>状态</th>' +
+                                '<th>创建时间</th>' +
+                                '<th>最后活动</th>' +
+                                '<th>操作</th>' +
+                            '</tr>' +
+                        '</thead>' +
+                        '<tbody>';
+                
+                for (const [key, hole] of Object.entries(data.holes)) {
+                    if (hole && typeof hole === 'object') {
+                        const statusClass = hole.IsActive ? 'active' : 'inactive';
+                        const statusText = hole.IsActive ? '活跃' : '非活跃';
+                        const createdAt = hole.CreatedAt ? new Date(hole.CreatedAt).toLocaleString() : '-';
+                        const lastActivity = hole.LastActivity ? new Date(hole.LastActivity).toLocaleString() : '-';
+                        
+                        // 格式化外部地址
+                        let externalAddr = '-';
+                        if (hole.RemoteAddr) {
+                            if (hole.RemoteAddr.IP && hole.RemoteAddr.Port) {
+                                externalAddr = hole.RemoteAddr.IP + ':' + hole.RemoteAddr.Port;
+                            } else if (hole.RemoteAddr.String) {
+                                externalAddr = hole.RemoteAddr.String;
+                            }
+                        }
+                        
+                        tableHTML += 
+                            '<tr>' +
+                                '<td>' + (hole.LocalPort || '-') + '</td>' +
+                                '<td>' + (hole.Protocol || '-') + '</td>' +
+                                '<td>' + (hole.Description || '-') + '</td>' +
+                                '<td>' + externalAddr + '</td>' +
+                                '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
+                                '<td>' + createdAt + '</td>' +
+                                '<td>' + lastActivity + '</td>' +
+                                '<td>' +
+                                    '<button class="btn btn-danger" onclick="closeNATHole(' + (hole.LocalPort || 0) + ', \'' + (hole.Protocol || 'TCP') + '\')">' +
+                                        '关闭' +
+                                    '</button>' +
+                                '</td>' +
+                            '</tr>';
+                    }
+                }
+                
+                tableHTML += '</tbody></table>';
+                natMappingsTable.innerHTML = tableHTML;
+            } catch (error) {
+                console.error('加载STUN穿透洞失败:', error);
+                const natMappingsTable = document.getElementById('natMappingsTable');
+                natMappingsTable.innerHTML = '<div class="error">加载STUN穿透洞失败: ' + error.message + '</div>';
+                showMessage('加载STUN穿透洞失败: ' + error.message, 'error');
             }
         }
         
@@ -724,6 +972,59 @@ const adminHTML = `<!DOCTYPE html>
             }
         }
         
+        // 处理添加STUN穿透洞
+        async function handleAddNATHole(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            const requestData = {
+                internal_port: parseInt(formData.get('internal_port')),
+                protocol: formData.get('protocol') || 'TCP',
+                description: formData.get('description') || ''
+            };
+            
+            // 验证输入
+            if (!requestData.internal_port || requestData.internal_port < 1 || requestData.internal_port > 65535) {
+                showMessage('内部端口必须是1-65535之间的数字', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/create-nat-hole', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage('STUN穿透洞创建成功', 'success');
+                    event.target.reset();
+                    loadNATHoles();
+                    loadStatus();
+                } else {
+                    // 处理不同的错误状态
+                    let errorMessage = result.message || '创建STUN穿透洞失败';
+                    
+                    if (response.status === 401) {
+                        errorMessage = '认证失败，请检查用户名和密码';
+                    } else if (response.status === 400) {
+                        errorMessage = result.message || '请求参数错误';
+                    } else if (response.status === 500) {
+                        errorMessage = result.message || '服务器内部错误';
+                    }
+                    
+                    showMessage(errorMessage, 'error');
+                }
+            } catch (error) {
+                console.error('创建STUN穿透洞失败:', error);
+                showMessage('网络错误: ' + error.message, 'error');
+            }
+        }
+        
         // 删除映射
         async function removeMapping(internalPort, externalPort, protocol) {
             if (!confirm('确定要删除这个端口映射吗？')) {
@@ -768,6 +1069,52 @@ const adminHTML = `<!DOCTYPE html>
                 }
             } catch (error) {
                 console.error('删除映射失败:', error);
+                showMessage('网络错误: ' + error.message, 'error');
+            }
+        }
+        
+        // 关闭STUN穿透洞
+        async function closeNATHole(internalPort, protocol) {
+            if (!confirm('确定要关闭这个STUN穿透洞吗？')) {
+                return;
+            }
+            
+            const requestData = {
+                internal_port: parseInt(internalPort),
+                protocol: protocol || 'TCP'
+            };
+            
+            try {
+                const response = await fetch('/api/close-nat-hole', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage('STUN穿透洞关闭成功', 'success');
+                    loadNATHoles();
+                    loadStatus();
+                } else {
+                    // 处理不同的错误状态
+                    let errorMessage = result.message || '关闭STUN穿透洞失败';
+                    
+                    if (response.status === 401) {
+                        errorMessage = '认证失败，请检查用户名和密码';
+                    } else if (response.status === 400) {
+                        errorMessage = result.message || '请求参数错误';
+                    } else if (response.status === 500) {
+                        errorMessage = result.message || '服务器内部错误';
+                    }
+                    
+                    showMessage(errorMessage, 'error');
+                }
+            } catch (error) {
+                console.error('关闭STUN穿透洞失败:', error);
                 showMessage('网络错误: ' + error.message, 'error');
             }
         }

@@ -88,9 +88,6 @@ func main() {
 		})
 	}
 
-	// 添加性能监控字段
-	logger.AddHook(&PerformanceHook{})
-
 	// 加载配置文件
 	cfg, err := config.LoadConfig(*configFile)
 	if err != nil {
@@ -126,10 +123,11 @@ func main() {
 
 	// 打印启动信息
 	logger.WithFields(logrus.Fields{
-		"config_file": *configFile,
-		"log_level":   *logLevel,
-		"port_range":  fmt.Sprintf("%d-%d", cfg.PortRange.Start, cfg.PortRange.End),
-		"admin_port":  adminServer.GetPort(),
+		"config_file":   *configFile,
+		"log_level":     *logLevel,
+		"port_range":    fmt.Sprintf("%d-%d", cfg.PortRange.Start, cfg.PortRange.End),
+		"admin_port":    adminServer.GetPort(),
+		"nat_traversal": cfg.NATTraversal.Enabled,
 	}).Info("自动UPnP服务已启动")
 
 	// 等待中断信号
