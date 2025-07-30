@@ -200,6 +200,9 @@ upnp:
   mapping_duration: 1h      # 端口映射持续时间，0表示永久
   retry_attempts: 3         # 重试次数
   retry_delay: 5s           # 重试延迟
+  health_check_interval: 1m # 健康检查间隔
+  max_fail_count: 3         # 最大失败次数
+  keep_alive_interval: 2m   # 保活间隔
 
 # 网络接口配置
 network:

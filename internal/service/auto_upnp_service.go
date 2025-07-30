@@ -51,11 +51,14 @@ func (as *AutoUPnPService) Start() error {
 
 	// 初始化UPnP管理器
 	upnpConfig := &upnp.Config{
-		DiscoveryTimeout: as.config.UPnP.DiscoveryTimeout,
-		MappingDuration:  as.config.UPnP.MappingDuration,
-		RetryAttempts:    as.config.UPnP.RetryAttempts,
-		RetryDelay:       as.config.UPnP.RetryDelay,
-		MaxMappings:      as.config.Monitor.MaxMappings,
+		DiscoveryTimeout:    as.config.UPnP.DiscoveryTimeout,
+		MappingDuration:     as.config.UPnP.MappingDuration,
+		RetryAttempts:       as.config.UPnP.RetryAttempts,
+		RetryDelay:          as.config.UPnP.RetryDelay,
+		MaxMappings:         as.config.Monitor.MaxMappings,
+		HealthCheckInterval: as.config.UPnP.HealthCheckInterval,
+		MaxFailCount:        as.config.UPnP.MaxFailCount,
+		KeepAliveInterval:   as.config.UPnP.KeepAliveInterval,
 	}
 
 	as.upnpManager = upnp.NewUPnPManager(upnpConfig, as.logger)

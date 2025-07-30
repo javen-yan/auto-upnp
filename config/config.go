@@ -25,10 +25,13 @@ type PortRangeConfig struct {
 
 // UPnPConfig UPnP配置
 type UPnPConfig struct {
-	DiscoveryTimeout time.Duration `mapstructure:"discovery_timeout"`
-	MappingDuration  time.Duration `mapstructure:"mapping_duration"`
-	RetryAttempts    int           `mapstructure:"retry_attempts"`
-	RetryDelay       time.Duration `mapstructure:"retry_delay"`
+	DiscoveryTimeout    time.Duration `mapstructure:"discovery_timeout"`
+	MappingDuration     time.Duration `mapstructure:"mapping_duration"`
+	RetryAttempts       int           `mapstructure:"retry_attempts"`
+	RetryDelay          time.Duration `mapstructure:"retry_delay"`
+	HealthCheckInterval time.Duration `mapstructure:"health_check_interval"`
+	MaxFailCount        int           `mapstructure:"max_fail_count"`
+	KeepAliveInterval   time.Duration `mapstructure:"keep_alive_interval"`
 }
 
 // NetworkConfig 网络配置
@@ -94,6 +97,9 @@ func setDefaults() {
 	viper.SetDefault("upnp.mapping_duration", "1h")
 	viper.SetDefault("upnp.retry_attempts", 3)
 	viper.SetDefault("upnp.retry_delay", "5s")
+	viper.SetDefault("upnp.health_check_interval", "1m")
+	viper.SetDefault("upnp.max_fail_count", 3)
+	viper.SetDefault("upnp.keep_alive_interval", "2m")
 
 	// 网络默认值
 	viper.SetDefault("network.preferred_interfaces", []string{"eth0", "wlan0"})
