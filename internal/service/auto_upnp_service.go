@@ -162,6 +162,9 @@ func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool) {
 					"port":  port,
 					"error": err,
 				}).Error("添加自动UPnP端口映射失败")
+
+				// 添加重试机制
+				go as.retryAddMapping(port, description)
 				return
 			}
 
@@ -179,6 +182,9 @@ func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool) {
 					"port":  port,
 					"error": err,
 				}).Error("删除自动UPnP端口映射失败")
+
+				// 添加重试机制
+				go as.retryRemoveMapping(port)
 				return
 			}
 
@@ -186,6 +192,64 @@ func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool) {
 			as.logger.WithField("port", port).Info("自动UPnP端口映射删除成功")
 		}
 	}
+}
+
+// retryAddMapping 重试添加映射
+func (as *AutoUPnPService) retryAddMapping(port int, description string) {
+	maxRetries := 3
+	retryDelay := time.Second * 5
+
+	for i := 0; i < maxRetries; i++ {
+		time.Sleep(retryDelay)
+
+		err := as.upnpManager.AddPortMapping(port, port, "TCP", description)
+		if err == nil {
+			as.mappingMutex.Lock()
+			as.activeMappings[port] = true
+			as.mappingMutex.Unlock()
+
+			as.logger.WithField("port", port).Info("重试添加UPnP映射成功")
+			return
+		}
+
+		as.logger.WithFields(logrus.Fields{
+			"port":       port,
+			"attempt":    i + 1,
+			"maxRetries": maxRetries,
+			"error":      err,
+		}).Warn("重试添加UPnP映射失败")
+	}
+
+	as.logger.WithField("port", port).Error("重试添加UPnP映射最终失败")
+}
+
+// retryRemoveMapping 重试删除映射
+func (as *AutoUPnPService) retryRemoveMapping(port int) {
+	maxRetries := 3
+	retryDelay := time.Second * 5
+
+	for i := 0; i < maxRetries; i++ {
+		time.Sleep(retryDelay)
+
+		err := as.upnpManager.RemovePortMapping(port, port, "TCP")
+		if err == nil {
+			as.mappingMutex.Lock()
+			delete(as.activeMappings, port)
+			as.mappingMutex.Unlock()
+
+			as.logger.WithField("port", port).Info("重试删除UPnP映射成功")
+			return
+		}
+
+		as.logger.WithFields(logrus.Fields{
+			"port":       port,
+			"attempt":    i + 1,
+			"maxRetries": maxRetries,
+			"error":      err,
+		}).Warn("重试删除UPnP映射失败")
+	}
+
+	as.logger.WithField("port", port).Error("重试删除UPnP映射最终失败")
 }
 
 // onManualPortStatusChanged 手动端口状态变化回调

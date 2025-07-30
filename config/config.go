@@ -32,6 +32,11 @@ type UPnPConfig struct {
 	HealthCheckInterval time.Duration `mapstructure:"health_check_interval"`
 	MaxFailCount        int           `mapstructure:"max_fail_count"`
 	KeepAliveInterval   time.Duration `mapstructure:"keep_alive_interval"`
+	MaxCacheSize        int           `mapstructure:"max_cache_size"`
+	CacheTTL            time.Duration `mapstructure:"cache_ttl"`
+	EnableRetry         bool          `mapstructure:"enable_retry"`
+	RetryMaxAttempts    int           `mapstructure:"retry_max_attempts"`
+	RetryBackoffFactor  float64       `mapstructure:"retry_backoff_factor"`
 }
 
 // NetworkConfig 网络配置
@@ -100,6 +105,11 @@ func setDefaults() {
 	viper.SetDefault("upnp.health_check_interval", "1m")
 	viper.SetDefault("upnp.max_fail_count", 3)
 	viper.SetDefault("upnp.keep_alive_interval", "2m")
+	viper.SetDefault("upnp.max_cache_size", 1000)
+	viper.SetDefault("upnp.cache_ttl", "1h")
+	viper.SetDefault("upnp.enable_retry", true)
+	viper.SetDefault("upnp.retry_max_attempts", 5)
+	viper.SetDefault("upnp.retry_backoff_factor", 2.0)
 
 	// 网络默认值
 	viper.SetDefault("network.preferred_interfaces", []string{"eth0", "wlan0"})

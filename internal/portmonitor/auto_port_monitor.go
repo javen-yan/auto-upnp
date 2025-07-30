@@ -26,6 +26,9 @@ type AutoPortMonitor struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	callbacks  []AutoPortStatusCallback
+
+	// 添加对象池
+	statusPool sync.Pool
 }
 
 // Config 自动端口监控配置
@@ -33,6 +36,7 @@ type Config struct {
 	CheckInterval time.Duration
 	PortRange     []int
 	Timeout       time.Duration
+	EnablePool    bool // 是否启用对象池
 }
 
 // AutoPortStatusCallback 自动端口状态变化回调函数
@@ -42,7 +46,7 @@ type AutoPortStatusCallback func(port int, isActive bool)
 func NewAutoPortMonitor(config *Config, logger *logrus.Logger) *AutoPortMonitor {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &AutoPortMonitor{
+	apm := &AutoPortMonitor{
 		config:     config,
 		logger:     logger,
 		portStatus: make(map[int]*AutoPortStatus),
@@ -50,6 +54,17 @@ func NewAutoPortMonitor(config *Config, logger *logrus.Logger) *AutoPortMonitor 
 		cancel:     cancel,
 		callbacks:  make([]AutoPortStatusCallback, 0),
 	}
+
+	// 初始化对象池
+	if config.EnablePool {
+		apm.statusPool = sync.Pool{
+			New: func() interface{} {
+				return &AutoPortStatus{}
+			},
+		}
+	}
+
+	return apm
 }
 
 // AddCallback 添加端口状态变化回调
@@ -65,11 +80,7 @@ func (apm *AutoPortMonitor) Start() {
 
 	// 初始化端口状态
 	for _, port := range apm.config.PortRange {
-		apm.portStatus[port] = &AutoPortStatus{
-			Port:     port,
-			IsActive: false,
-			LastSeen: time.Time{},
-		}
+		apm.portStatus[port] = apm.getStatusFromPool()
 	}
 
 	// 启动监控协程
@@ -119,11 +130,7 @@ func (apm *AutoPortMonitor) checkPort(port int) {
 	apm.mutex.Lock()
 	status, exists := apm.portStatus[port]
 	if !exists {
-		status = &AutoPortStatus{
-			Port:     port,
-			IsActive: false,
-			LastSeen: time.Time{},
-		}
+		status = apm.getStatusFromPool()
 		apm.portStatus[port] = status
 	}
 
@@ -259,4 +266,23 @@ func (apm *AutoPortMonitor) GetMonitoredPorts() []int {
 	}
 
 	return ports
+}
+
+// getStatusFromPool 从对象池获取状态对象
+func (apm *AutoPortMonitor) getStatusFromPool() *AutoPortStatus {
+	if apm.config.EnablePool {
+		return apm.statusPool.Get().(*AutoPortStatus)
+	}
+	return &AutoPortStatus{}
+}
+
+// putStatusToPool 将状态对象放回对象池
+func (apm *AutoPortMonitor) putStatusToPool(status *AutoPortStatus) {
+	if apm.config.EnablePool {
+		// 重置状态
+		status.Port = 0
+		status.IsActive = false
+		status.LastSeen = time.Time{}
+		apm.statusPool.Put(status)
+	}
 }

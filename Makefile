@@ -81,6 +81,19 @@ test-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "覆盖率报告已生成: coverage.html"
 
+# 运行基准测试
+.PHONY: benchmark
+benchmark:
+	@echo "运行基准测试..."
+	go test -bench=. -benchmem ./...
+
+# 运行基准测试并生成报告
+.PHONY: benchmark-report
+benchmark-report:
+	@echo "运行基准测试并生成报告..."
+	go test -bench=. -benchmem -cpuprofile=cpu.prof -memprofile=mem.prof ./...
+	@echo "性能分析文件已生成: cpu.prof, mem.prof"
+
 # 代码格式化
 .PHONY: fmt
 fmt:
@@ -93,12 +106,61 @@ lint:
 	@echo "检查代码..."
 	golangci-lint run
 
+# 安全检查
+.PHONY: security
+security:
+	@echo "运行安全检查..."
+	gosec ./...
+
+# 依赖检查
+.PHONY: deps-check
+deps-check:
+	@echo "检查依赖..."
+	go mod verify
+	go list -m -u all
+
+# 更新依赖
+.PHONY: deps-update
+deps-update:
+	@echo "更新依赖..."
+	go get -u ./...
+	go mod tidy
+
+# 生成文档
+.PHONY: docs
+docs:
+	@echo "生成文档..."
+	godoc -http=:6060 &
+	@echo "文档服务器已启动: http://localhost:6060"
+
+# 性能分析
+.PHONY: profile
+profile:
+	@echo "启动性能分析..."
+	go tool pprof -http=:8080 cpu.prof
+
+# 内存分析
+.PHONY: mem-profile
+mem-profile:
+	@echo "启动内存分析..."
+	go tool pprof -http=:8080 mem.prof
+
+# 构建优化版本
+.PHONY: build-optimized
+build-optimized:
+	@echo "构建优化版本..."
+	@mkdir -p ${BUILD_DIR}
+	go build ${LDFLAGS} -gcflags="-N -l" -o ${BUILD_DIR}/${BINARY_NAME}-debug cmd/main.go
+	go build ${LDFLAGS} -ldflags="-s -w" -o ${BUILD_DIR}/${BINARY_NAME}-optimized cmd/main.go
+	@echo "优化版本构建完成"
+
 # 清理构建文件
 .PHONY: clean
 clean:
 	@echo "清理构建文件..."
 	rm -rf ${BUILD_DIR}
 	rm -f coverage.out coverage.html
+	rm -f cpu.prof mem.prof
 	rm -rf release
 
 # 运行服务

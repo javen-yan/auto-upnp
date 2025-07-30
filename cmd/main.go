@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
+	"time"
 
 	"auto-upnp/config"
 	"auto-upnp/internal/admin"
@@ -14,6 +16,22 @@ import (
 
 	"github.com/sirupsen/logrus"
 )
+
+// PerformanceHook 性能监控钩子
+type PerformanceHook struct{}
+
+// Levels 返回支持的日志级别
+func (h *PerformanceHook) Levels() []logrus.Level {
+	return logrus.AllLevels
+}
+
+// Fire 处理日志事件
+func (h *PerformanceHook) Fire(entry *logrus.Entry) error {
+	// 添加性能相关字段
+	entry.Data["goroutines"] = runtime.NumGoroutine()
+	entry.Data["memory_mb"] = runtime.MemStats{}
+	return nil
+}
 
 // 版本信息，通过编译时注入
 var (
@@ -52,7 +70,26 @@ func main() {
 	// 配置日志
 	logger := logrus.New()
 	logger.SetLevel(level)
-	logger.SetFormatter(&logrus.JSONFormatter{})
+
+	// 使用结构化日志格式
+	if *logLevel == "debug" {
+		logger.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp: true,
+			ForceColors:   true,
+		})
+	} else {
+		logger.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: time.RFC3339,
+			FieldMap: logrus.FieldMap{
+				logrus.FieldKeyTime:  "timestamp",
+				logrus.FieldKeyLevel: "level",
+				logrus.FieldKeyMsg:   "message",
+			},
+		})
+	}
+
+	// 添加性能监控字段
+	logger.AddHook(&PerformanceHook{})
 
 	// 加载配置文件
 	cfg, err := config.LoadConfig(*configFile)

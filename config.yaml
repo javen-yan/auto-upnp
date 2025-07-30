@@ -15,6 +15,11 @@ upnp:
   health_check_interval: 1m # 健康检查间隔
   max_fail_count: 3         # 最大失败次数
   keep_alive_interval: 2m   # 保活间隔
+  max_cache_size: 10        # 最大缓存大小
+  cache_ttl: 10m            # 缓存TTL
+  enable_retry: true        # 启用重试机制
+  retry_max_attempts: 5     # 最大重试次数
+  retry_backoff_factor: 2.0 # 重试退避因子
 
 # 网络接口配置
 network:
@@ -34,11 +39,12 @@ monitor:
   check_interval: 30s       # 端口状态检查间隔
   cleanup_interval: 5m      # 清理无效映射间隔
   max_mappings: 100         # 最大端口映射数量
+  enable_pool: true         # 启用对象池优化
 
 # 管理服务配置
 admin:
   enabled: true             # 是否启用管理服务
   host: "0.0.0.0"          # 监听地址
   username: "admin"         # 用户名
-  password: "admin"      # 密码 
-  data_dir: "data"       # 数据目录
+  password: "admin"         # 密码 
+  data_dir: "data"          # 数据目录
