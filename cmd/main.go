@@ -1,37 +1,21 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 	"time"
 
 	"auto-upnp/config"
 	"auto-upnp/internal/admin"
 	"auto-upnp/internal/service"
+	"auto-upnp/internal/util"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
-
-// PerformanceHook 性能监控钩子
-type PerformanceHook struct{}
-
-// Levels 返回支持的日志级别
-func (h *PerformanceHook) Levels() []logrus.Level {
-	return logrus.AllLevels
-}
-
-// Fire 处理日志事件
-func (h *PerformanceHook) Fire(entry *logrus.Entry) error {
-	// 添加性能相关字段
-	entry.Data["goroutines"] = runtime.NumGoroutine()
-	entry.Data["memory_mb"] = runtime.MemStats{}
-	return nil
-}
 
 // 版本信息，通过编译时注入
 var (
@@ -40,31 +24,103 @@ var (
 	date    = "unknown"
 )
 
+// 全局变量
 var (
-	configFile  = flag.String("config", "config.yaml", "配置文件路径")
-	logLevel    = flag.String("log-level", "info", "日志级别 (debug, info, warn, error)")
-	showHelp    = flag.Bool("help", false, "显示帮助信息")
-	showVersion = flag.Bool("version", false, "显示版本信息")
+	configFile string
+	logLevel   string
+	natSniffer bool
 )
 
-func main() {
-	flag.Parse()
+// rootCmd 表示没有调用子命令时的基础命令
+var rootCmd = &cobra.Command{
+	Use:   "auto-upnp",
+	Short: "自动UPnP服务",
+	Long: `自动UPnP服务是一个用于自动监控和管理UPnP端口映射的工具。
 
-	if *showHelp {
-		showUsage()
-		return
-	}
+功能特性:
+  1. 自动监控指定端口范围的上下线状态
+  2. 自动添加和删除UPnP端口映射
+  3. 支持手动端口映射管理
+  4. 自动清理过期的端口映射
+  5. 实时状态监控和日志记录`,
+	RunE: runMain,
+}
 
-	if *showVersion {
+// versionCmd 显示版本信息
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "显示版本信息",
+	Run: func(cmd *cobra.Command, args []string) {
 		showVersionInfo()
-		return
+	},
+}
+
+// natSnifferCmd NAT嗅探命令
+var natSnifferCmd = &cobra.Command{
+	Use:   "nat-sniffer",
+	Short: "启用NAT嗅探",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 设置日志级别
+		level, err := logrus.ParseLevel(logLevel)
+		if err != nil {
+			return fmt.Errorf("无效的日志级别: %s", logLevel)
+		}
+
+		// 配置日志
+		logger := logrus.New()
+		logger.SetLevel(level)
+
+		// 使用结构化日志格式
+		if logLevel == "debug" {
+			logger.SetFormatter(&logrus.TextFormatter{
+				FullTimestamp: true,
+				ForceColors:   true,
+			})
+		} else {
+			logger.SetFormatter(&logrus.JSONFormatter{
+				TimestampFormat: time.RFC3339,
+				FieldMap: logrus.FieldMap{
+					logrus.FieldKeyTime:  "timestamp",
+					logrus.FieldKeyLevel: "level",
+					logrus.FieldKeyMsg:   "message",
+				},
+			})
+		}
+
+		// 启用NAT嗅探
+		util.NATSnifferTry(logger)
+		return nil
+	},
+}
+
+func init() {
+	// 添加持久标志到 root 命令
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.yaml", "配置文件路径")
+	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "l", "info", "日志级别 (debug, info, warn, error)")
+	rootCmd.PersistentFlags().BoolVar(&natSniffer, "nat-sniffer", false, "启用NAT嗅探")
+
+	// 添加子命令
+	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(natSnifferCmd)
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runMain(cmd *cobra.Command, args []string) error {
+	// 如果启用了NAT嗅探，直接执行NAT嗅探功能
+	if natSniffer {
+		return natSnifferCmd.RunE(cmd, args)
 	}
 
 	// 设置日志级别
-	level, err := logrus.ParseLevel(*logLevel)
+	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
-		fmt.Printf("无效的日志级别: %s\n", *logLevel)
-		os.Exit(1)
+		return fmt.Errorf("无效的日志级别: %s", logLevel)
 	}
 
 	// 配置日志
@@ -72,7 +128,7 @@ func main() {
 	logger.SetLevel(level)
 
 	// 使用结构化日志格式
-	if *logLevel == "debug" {
+	if logLevel == "debug" {
 		logger.SetFormatter(&logrus.TextFormatter{
 			FullTimestamp: true,
 			ForceColors:   true,
@@ -89,7 +145,7 @@ func main() {
 	}
 
 	// 加载配置文件
-	cfg, err := config.LoadConfig(*configFile)
+	cfg, err := config.LoadConfig(configFile)
 	if err != nil {
 		logger.WithError(err).Fatal("加载配置文件失败")
 	}
@@ -123,8 +179,8 @@ func main() {
 
 	// 打印启动信息
 	logger.WithFields(logrus.Fields{
-		"config_file":   *configFile,
-		"log_level":     *logLevel,
+		"config_file":   configFile,
+		"log_level":     logLevel,
 		"port_range":    fmt.Sprintf("%d-%d", cfg.PortRange.Start, cfg.PortRange.End),
 		"admin_port":    adminServer.GetPort(),
 		"nat_traversal": cfg.NATTraversal.Enabled,
@@ -143,27 +199,7 @@ func main() {
 	adminServer.Stop()
 
 	logger.Info("自动UPnP服务已停止")
-}
-
-func showUsage() {
-	fmt.Println("自动UPnP服务")
-	fmt.Println()
-	fmt.Println("用法:")
-	fmt.Printf("  %s [选项]\n", os.Args[0])
-	fmt.Println()
-	fmt.Println("选项:")
-	flag.PrintDefaults()
-	fmt.Println()
-	fmt.Println("示例:")
-	fmt.Printf("  %s -config config.yaml -log-level debug\n", os.Args[0])
-	fmt.Printf("  %s -config /path/to/config.yaml\n", os.Args[0])
-	fmt.Println()
-	fmt.Println("功能:")
-	fmt.Println("  1. 自动监控指定端口范围的上下线状态")
-	fmt.Println("  2. 自动添加和删除UPnP端口映射")
-	fmt.Println("  3. 支持手动端口映射管理")
-	fmt.Println("  4. 自动清理过期的端口映射")
-	fmt.Println("  5. 实时状态监控和日志记录")
+	return nil
 }
 
 func showVersionInfo() {
