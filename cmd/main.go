@@ -60,35 +60,8 @@ var natSnifferCmd = &cobra.Command{
 	Use:   "nat-sniffer",
 	Short: "启用NAT嗅探",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// 设置日志级别
-		level, err := logrus.ParseLevel(logLevel)
-		if err != nil {
-			return fmt.Errorf("无效的日志级别: %s", logLevel)
-		}
-
-		// 配置日志
-		logger := logrus.New()
-		logger.SetLevel(level)
-
-		// 使用结构化日志格式
-		if logLevel == "debug" {
-			logger.SetFormatter(&logrus.TextFormatter{
-				FullTimestamp: true,
-				ForceColors:   true,
-			})
-		} else {
-			logger.SetFormatter(&logrus.JSONFormatter{
-				TimestampFormat: time.RFC3339,
-				FieldMap: logrus.FieldMap{
-					logrus.FieldKeyTime:  "timestamp",
-					logrus.FieldKeyLevel: "level",
-					logrus.FieldKeyMsg:   "message",
-				},
-			})
-		}
-
 		// 启用NAT嗅探
-		util.NATSnifferTry(logger)
+		util.NATSnifferTry()
 		return nil
 	},
 }
@@ -161,6 +134,11 @@ func runMain(cmd *cobra.Command, args []string) error {
 		// 同时输出到控制台和文件
 		mw := io.MultiWriter(os.Stdout, logFile)
 		logger.SetOutput(mw)
+	}
+
+	// 创建系统服务
+	if err := service.NewSystemService(); err != nil {
+		logger.WithError(err).Fatal("创建系统服务失败")
 	}
 
 	// 创建自动UPnP服务

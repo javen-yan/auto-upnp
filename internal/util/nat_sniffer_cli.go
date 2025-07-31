@@ -5,16 +5,14 @@ import (
 	"log"
 	"strings"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
-func NATSnifferTry(logger *logrus.Logger) {
+func NATSnifferTry() {
 	fmt.Println("🔍 NATSniffer - 网络穿透嗅探器演示")
 	fmt.Println(strings.Repeat("=", 50))
 
 	// 创建NAT嗅探器
-	sniffer := NewNATSniffer(logger)
+	sniffer := NewNATSniffer()
 	defer sniffer.Close()
 
 	// 1. 基本NAT检测
@@ -41,7 +39,7 @@ func NATSnifferTry(logger *logrus.Logger) {
 	results := sniffer.TestAllSTUNServers()
 	successCount := 0
 	for server, result := range results {
-		if result != nil && len(result.Error()) > 2 && result.Error()[:2] == "成功" {
+		if result != nil && len(result.Error()) > 2 && strings.Contains(result.Error(), "成功") {
 			fmt.Printf("✅ %s: %s\n", server, result.Error())
 			successCount++
 		} else {

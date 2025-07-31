@@ -48,9 +48,57 @@ const adminHTML = `<!DOCTYPE html>
             font-size: 1.1em;
         }
 
-        .add-mapping-button {
-            margin-top: 20px;
-            text-align: right;
+        .tools-area {
+            margin-bottom: 20px;
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .tools-area .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            border: 1px solid #e1e5e9;
+            background: white;
+            color: #333;
+        }
+        
+        .tools-area .btn:hover {
+            background: #f8f9fa;
+            border-color: #4facfe;
+            transform: translateY(-1px);
+        }
+        
+        .tools-area .btn svg {
+            width: 16px;
+            height: 16px;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .tools-area {
+                padding: 12px 15px;
+                gap: 10px;
+            }
+            
+            .tools-area .btn {
+                flex: 1;
+                min-width: 100px;
+                justify-content: center;
+                padding: 10px 12px;
+            }
         }
         
         .github-links {
@@ -134,6 +182,17 @@ const adminHTML = `<!DOCTYPE html>
             font-size: 2em;
             font-weight: bold;
             color: #4facfe;
+        }
+
+        .status-card .small-value {
+            font-size: 0.8em;
+            font-weight: bold;
+            color: #4facfe;
+        }
+
+        .status-card .description {
+            font-size: 0.8em;
+            color: #666;
         }
         
         .mappings-table {
@@ -378,24 +437,53 @@ const adminHTML = `<!DOCTYPE html>
         }
         
         .port-item {
-            background: white;
-            padding: 10px;
-            border-radius: 6px;
+            background: transparent;
+            padding: 10px 6px;
             text-align: center;
-            border: 2px solid #e1e5e9;
             cursor: pointer;
             transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            min-width: 60px;
         }
         
         .port-item.active {
-            background: #4facfe;
-            color: white;
-            border-color: #4facfe;
+            background: transparent;
         }
         
         .port-item.inactive {
-            background: #f8f9fa;
+            background: transparent;
+        }
+        
+        .port-indicator {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .port-indicator svg {
+            width: 100%;
+            height: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .port-item.active .port-indicator svg {
+            filter: drop-shadow(0 0 6px rgba(76, 175, 80, 0.8));
+        }
+        
+        .port-number {
+            font-size: 12px;
+            font-weight: 500;
             color: #666;
+        }
+        
+        .port-item.active .port-number {
+            color: #2e7d32;
+            font-weight: 600;
         }
         
         .loading {
@@ -428,6 +516,13 @@ const adminHTML = `<!DOCTYPE html>
             margin-bottom: 20px;
             border-left: 4px solid;
             font-weight: 500;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2000;
+            max-width: 90%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
         
         .message.error {
@@ -468,6 +563,62 @@ const adminHTML = `<!DOCTYPE html>
         
         .nat-indicator.disabled {
             background: #f44336;
+        }
+        
+        /* 系统状态样式 */
+        #system-status {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .system-status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        
+        .system-status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .system-status-item-label {
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0.9;
+        }
+        
+        .system-status-item-value {
+            font-size: 14px;
+            font-weight: 600;
+            text-align: right;
+            max-width: 60%;
+            word-break: break-all;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            #system-status {
+                margin-top: 15px;
+                padding: 12px;
+            }
+            
+            .system-status-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+            
+            .system-status-item-value {
+                text-align: left;
+                max-width: 100%;
+            }
         }
         
         .tab-container {
@@ -564,6 +715,93 @@ const adminHTML = `<!DOCTYPE html>
             .mappings-table .col-type {
                 display: none;
             }
+        }
+        
+        /* Element UI 风格的 Message 组件样式 */
+        .el-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3000;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 15px 20px;
+            min-width: 300px;
+            max-width: 80%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+            animation: messageSlideIn 0.3s ease-out;
+            border-left: 4px solid;
+        }
+        
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+        
+        @keyframes messageSlideOut {
+            from {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+        }
+        
+        .el-message.success {
+            border-left-color: #67c23a;
+            color: #67c23a;
+        }
+        
+        .el-message.error {
+            border-left-color: #f56c6c;
+            color: #f56c6c;
+        }
+        
+        .el-message.warning {
+            border-left-color: #e6a23c;
+            color: #e6a23c;
+        }
+        
+        .el-message.info {
+            border-left-color: #909399;
+            color: #909399;
+        }
+        
+        .el-message-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        
+        .el-message-content {
+            flex: 1;
+            word-break: break-word;
+        }
+        
+        .el-message-close {
+            font-size: 16px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s ease;
+            flex-shrink: 0;
+            margin-left: 8px;
+        }
+        
+        .el-message-close:hover {
+            opacity: 1;
         }
         
         /* 弹窗样式 */
@@ -703,15 +941,34 @@ const adminHTML = `<!DOCTYPE html>
                 </a>
             </div>
 
-            <!-- 添加映射按钮 -->
-            <div class="add-mapping-button">
-                <button type="button" class="btn" onclick="openAddMappingModal()">
-                    <span style="margin-right: 8px;">+</span>添加映射
-                </button>
-            </div>
+            <!-- 系统状态 -->
+            <div id="system-status"></div>
         </div>
         
         <div class="content">
+            <!-- 操作工具栏 -->
+            <div class="tools-area">
+                <button type="button" class="btn" onclick="openAddMappingModal()">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    </svg>
+                    添加映射
+                </button>
+                <!-- 预留更多按钮位置 -->
+                <!-- <button type="button" class="btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 13H5v-2h14v2z"/>
+                    </svg>
+                    批量操作
+                </button> -->
+                <!-- <button type="button" class="btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    刷新
+                </button> -->
+            </div>
+
             <!-- 服务状态 -->
             <div class="section">
                 <h2>服务状态</h2>
@@ -920,17 +1177,29 @@ const adminHTML = `<!DOCTYPE html>
                     '</div>' +
                     '<div class="status-card">' +
                         '<h3>NAT穿透</h3>' +
-                        '<div class="value">' + (data.port_mapping_status?.turn?.available ? '可用' : '不可用') + '</div>' +
-                        (data.port_mapping_status?.turn?.external_address ? 
-                            '<div style="font-size: 0.8em; margin-top: 5px; color: #666;">' +
-                                (data.port_mapping_status.turn.external_address.ip || data.port_mapping_status.turn.external_address.IP) + ':' + 
-                                (data.port_mapping_status.turn.external_address.port || data.port_mapping_status.turn.external_address.Port) +
-                            '</div>' : '') +
+                        '<div class="value">' + (data.port_mapping_status?.turn?.available ? '可用' : '不可用') + '</div>'
+                    '</div>';
+
+                const systemStatus = document.getElementById('system-status');
+                systemStatus.innerHTML = 
+                    '<div class="system-status-item">' +
+                        '<div class="system-status-item-label">NAT类型</div>' +
+                        '<div class="system-status-item-value">' + (data.system_service?.nat_detail?.type || '未知') + '</div>' +
+                    '</div>' +
+                    '<div class="system-status-item">' +
+                        '<div class="system-status-item-label">公网IP</div>' +
+                        '<div class="system-status-item-value">' + (data.system_service?.nat_detail?.public_ip || '未知') + '</div>' +
+                    '</div>' +
+                    '<div class="system-status-item">' +
+                        '<div class="system-status-item-label">本地IP</div>' +
+                        '<div class="system-status-item-value">' + (data.system_service?.nat_detail?.local_ip || '未知') + '</div>' +
+                    '</div>' +
+                    '<div class="system-status-item">' +
+                        '<div class="system-status-item-label">描述</div>' +
+                        '<div class="system-status-item-value">' + (data.system_service?.nat_detail?.description || '未知') + '</div>' +
                     '</div>';
             } catch (error) {
                 console.error('加载状态失败:', error);
-                const statusGrid = document.getElementById('statusGrid');
-                statusGrid.innerHTML = '<div class="error">加载状态失败: ' + error.message + '</div>';
                 showMessage('加载状态失败: ' + error.message, 'error');
             }
         }
@@ -1014,8 +1283,6 @@ const adminHTML = `<!DOCTYPE html>
                 mappingsTable.innerHTML = tableHTML;
             } catch (error) {
                 console.error('加载手动映射失败:', error);
-                const mappingsTable = document.getElementById('manualMappingsTable');
-                mappingsTable.innerHTML = '<div class="error">加载手动映射失败: ' + error.message + '</div>';
                 showMessage('加载手动映射失败: ' + error.message, 'error');
             }
         }
@@ -1099,8 +1366,6 @@ const adminHTML = `<!DOCTYPE html>
                 mappingsTable.innerHTML = tableHTML;
             } catch (error) {
                 console.error('加载映射失败:', error);
-                const mappingsTable = document.getElementById('mappingsTable');
-                mappingsTable.innerHTML = '<div class="error">加载映射失败: ' + error.message + '</div>';
                 showMessage('加载映射失败: ' + error.message, 'error');
             }
         }
@@ -1134,15 +1399,22 @@ const adminHTML = `<!DOCTYPE html>
                 
                 // 只显示活跃端口
                 activePorts.sort((a, b) => a - b).forEach(port => {
-                    portsHTML += '<div class="port-item active">' + port + '</div>';
+                    portsHTML += '<div class="port-item active">' +
+                        '<div class="port-indicator">' +
+                            '<svg t="1753951582935" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="7241" width="200" height="200">' +
+                                '<path d="M512 512m-512 0a512 512 0 1 0 1024 0 512 512 0 1 0-1024 0Z" fill="#18B256" p-id="7242"></path>' +
+                                '<path d="M777.386667 234.666667H246.613333A54.784 54.784 0 0 0 192 289.28v376.448h75.733333v49.066667H356.266667v48.810666a25.685333 25.685333 0 0 0 25.685333 25.685334h0.512l260.864-5.546667a25.6 25.6 0 0 0 25.088-25.6v-43.392h89.173333v-49.066667H832V289.365333a54.784 54.784 0 0 0-54.613333-54.613333z m-0.853334 375.594666h-74.410666v49.066667h-89.173334v69.589333l-201.216 4.266667v-73.898667H323.2v-49.066666H247.338667L246.613333 290.218667H776.533333z" fill="#FFFFFF" p-id="7243"></path>' +
+                                '<path d="M317.781333 335.317333h55.466667v196.266667h-55.466667zM428.8 335.317333h55.466667v196.266667h-55.466667zM539.776 335.317333h55.466667v196.266667h-55.466667zM650.752 335.317333h55.466667v196.266667h-55.466667z" fill="#FFFFFF" p-id="7244"></path>' +
+                            '</svg>' +
+                        '</div>' +
+                        '<div class="port-number">' + port + '</div>' +
+                    '</div>';
                 });
                 
                 portsHTML += '</div>';
                 portsStatus.innerHTML = portsHTML;
             } catch (error) {
                 console.error('加载端口状态失败:', error);
-                const portsStatus = document.getElementById('portsStatus');
-                portsStatus.innerHTML = '<div class="error">加载端口状态失败: ' + error.message + '</div>';
                 showMessage('加载端口状态失败: ' + error.message, 'error');
             }
         }
@@ -1255,25 +1527,71 @@ const adminHTML = `<!DOCTYPE html>
             }
         }
         
-        // 显示消息
-        function showMessage(message, type) {
+        // Element UI 风格的 Message 组件
+        function showMessage(message, type = 'info', duration = 3000) {
             // 移除现有的消息
-            const existingMessages = document.querySelectorAll('.message');
-            existingMessages.forEach(msg => msg.remove());
+            const existingMessages = document.querySelectorAll('.el-message');
+            existingMessages.forEach(msg => {
+                msg.style.animation = 'messageSlideOut 0.3s ease-out';
+                setTimeout(() => msg.remove(), 300);
+            });
             
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message ' + type;
-            messageDiv.textContent = message;
+            // 创建消息元素
+            const messageEl = document.createElement('div');
+            messageEl.className = 'el-message ' + type;
             
-            const content = document.querySelector('.content');
-            content.insertBefore(messageDiv, content.firstChild);
+            // 设置图标
+            let icon = '';
+            switch(type) {
+                case 'success':
+                    icon = '✓';
+                    break;
+                case 'error':
+                    icon = '✗';
+                    break;
+                case 'warning':
+                    icon = '⚠';
+                    break;
+                default:
+                    icon = 'ℹ';
+                    break;
+            }
             
-            // 自动移除消息
-            setTimeout(() => {
-                if (messageDiv.parentNode) {
-                    messageDiv.remove();
-                }
-            }, 5000);
+            // 构建消息HTML
+            messageEl.innerHTML = 
+                '<span class="el-message-icon">' + icon + '</span>' +
+                '<span class="el-message-content">' + message + '</span>' +
+                '<span class="el-message-close" onclick="this.parentElement.remove()">×</span>';
+            
+            // 添加到页面
+            document.body.appendChild(messageEl);
+            
+            // 自动关闭
+            if (duration > 0) {
+                setTimeout(() => {
+                    if (messageEl.parentNode) {
+                        messageEl.style.animation = 'messageSlideOut 0.3s ease-out';
+                        setTimeout(() => messageEl.remove(), 300);
+                    }
+                }, duration);
+            }
+        }
+        
+        // 便捷方法
+        function showSuccess(message, duration = 3000) {
+            showMessage(message, 'success', duration);
+        }
+        
+        function showError(message, duration = 5000) {
+            showMessage(message, 'error', duration);
+        }
+        
+        function showWarning(message, duration = 4000) {
+            showMessage(message, 'warning', duration);
+        }
+        
+        function showInfo(message, duration = 3000) {
+            showMessage(message, 'info', duration);
         }
         
         // 页面卸载时清理定时器

@@ -203,11 +203,6 @@ upnp:
   health_check_interval: 1m # 健康检查间隔
   max_fail_count: 3         # 最大失败次数
   keep_alive_interval: 2m   # 保活间隔
-  max_cache_size: 10        # 最大缓存大小
-  cache_ttl: 10m            # 缓存TTL
-  enable_retry: true        # 启用重试机制
-  retry_max_attempts: 5     # 最大重试次数
-  retry_backoff_factor: 2.0 # 重试退避因子
 
 # 网络接口配置
 network:
@@ -226,7 +221,6 @@ log:
 monitor:
   check_interval: 10s       # 端口状态检查间隔
   cleanup_interval: 5m      # 清理无效映射间隔
-  max_mappings: 100         # 最大端口映射数量
 
 # 管理员配置
 admin:
@@ -265,7 +259,7 @@ Wants=network.target
 Type=simple
 User=root
 Group=root
-ExecStart=${BINARY_PATH} -config ${CONFIG_FILE}
+ExecStart=${BINARY_PATH} -c ${CONFIG_FILE}
 ExecReload=/bin/kill -HUP \$MAINPID
 Restart=always
 RestartSec=10

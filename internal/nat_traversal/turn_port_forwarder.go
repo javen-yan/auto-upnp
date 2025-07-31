@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +74,7 @@ func NewTURNPortForwarder(logger *logrus.Logger, turnClient *TURNClient) *TURNPo
 // CreateForwardRule 创建转发规则
 func (tpf *TURNPortForwarder) CreateForwardRule(localPort int, protocol string, description string) (*ForwardRule, error) {
 	// 验证协议
+	protocol = strings.ToLower(protocol)
 	if protocol != "tcp" && protocol != "udp" {
 		return nil, fmt.Errorf("不支持的协议: %s", protocol)
 	}

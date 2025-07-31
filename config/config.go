@@ -67,10 +67,9 @@ type AdminConfig struct {
 
 // NATTraversalConfig NAT穿透配置
 type NATTraversalConfig struct {
-	Enabled     bool            `mapstructure:"enabled"`
-	UseTURN     bool            `mapstructure:"use_turn"`
-	TURNServers []TURNServer    `mapstructure:"turn_servers"`
-	PortRange   PortRangeConfig `mapstructure:"port_range"`
+	Enabled     bool         `mapstructure:"enabled"`
+	UseTURN     bool         `mapstructure:"use_turn"`
+	TURNServers []TURNServer `mapstructure:"turn_servers"`
 }
 
 // TURNServer TURN服务器配置
@@ -132,7 +131,6 @@ func setDefaults() {
 	// 监控默认值
 	viper.SetDefault("monitor.check_interval", "30s")
 	viper.SetDefault("monitor.cleanup_interval", "5m")
-	viper.SetDefault("monitor.max_mappings", 100)
 
 	// 管理服务默认值
 	viper.SetDefault("admin.enabled", true)
@@ -153,8 +151,6 @@ func setDefaults() {
 			"realm":    "turn.ealine.cn",
 		},
 	})
-	viper.SetDefault("nat_traversal.port_range.start", 49152)
-	viper.SetDefault("nat_traversal.port_range.end", 65535)
 }
 
 // GetPortRange 获取端口范围列表

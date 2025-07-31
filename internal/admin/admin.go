@@ -172,6 +172,11 @@ func (as *AdminServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"url":     fmt.Sprintf("http://%s:%d", as.config.Admin.Host, as.port),
 	}
 
+	// system service
+	status["system_service"] = map[string]interface{}{
+		"nat_detail": service.SystemServiceInstance.NatDetail,
+	}
+
 	as.writeJSON(w, status)
 }
 

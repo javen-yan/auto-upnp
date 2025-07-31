@@ -8,12 +8,10 @@ import (
 	"time"
 
 	"github.com/pion/stun"
-	"github.com/sirupsen/logrus"
 )
 
 // NATSniffer 网络穿透嗅探器
 type NATSniffer struct {
-	logger      *logrus.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
 	stunServers []string
@@ -40,6 +38,26 @@ type NATInfo struct {
 	Description string
 }
 
+func (n *NATInfo) ToDetail() *NATDetail {
+	return &NATDetail{
+		Type:        n.Type.String(),
+		PublicIP:    n.PublicIP.String(),
+		PublicPort:  n.PublicPort,
+		LocalIP:     n.LocalIP.String(),
+		LocalPort:   n.LocalPort,
+		Description: n.Description,
+	}
+}
+
+type NATDetail struct {
+	Type        string `json:"type"`
+	PublicIP    string `json:"public_ip"`
+	PublicPort  int    `json:"public_port"`
+	LocalIP     string `json:"local_ip"`
+	LocalPort   int    `json:"local_port"`
+	Description string `json:"description"`
+}
+
 // 公共STUN服务器列表
 var PublicSTUNServers = []string{
 	"stun.miwifi.com:3478",
@@ -49,10 +67,9 @@ var PublicSTUNServers = []string{
 }
 
 // NewNATSniffer 创建新的NAT嗅探器
-func NewNATSniffer(logger *logrus.Logger) *NATSniffer {
+func NewNATSniffer() *NATSniffer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &NATSniffer{
-		logger:      logger,
 		ctx:         ctx,
 		cancel:      cancel,
 		stunServers: PublicSTUNServers,
@@ -68,7 +85,7 @@ func (n *NATSniffer) Close() {
 
 // DetectNATType 检测NAT类型
 func (n *NATSniffer) DetectNATType() (*NATInfo, error) {
-	n.logger.Info("开始检测NAT类型...")
+	fmt.Println("开始检测NAT类型...")
 
 	// 获取本地IP
 	localIP, err := n.getLocalIP()
@@ -97,7 +114,7 @@ func (n *NATSniffer) DetectNATType() (*NATInfo, error) {
 		Description: description,
 	}
 
-	n.logger.Infof("NAT检测完成: %s", description)
+	fmt.Printf("NAT检测完成: %s \n", description)
 	return natInfo, nil
 }
 
@@ -122,11 +139,11 @@ func (n *NATSniffer) getPublicIP() (net.IP, int, error) {
 		ip, port, err := n.querySTUNServer(server)
 		if err != nil {
 			lastErr = err
-			n.logger.Warnf("STUN服务器 %s 查询失败: %v", server, err)
+			fmt.Printf("STUN服务器 %s 查询失败: %v \n", server, err)
 			continue
 		}
 
-		n.logger.Infof("通过STUN服务器 %s 获取到公网IP: %s:%d", server, ip.String(), port)
+		fmt.Printf("通过STUN服务器 %s 获取到公网IP: %s:%d \n", server, ip.String(), port)
 		return ip, port, nil
 	}
 
@@ -178,7 +195,7 @@ func (n *NATSniffer) querySTUNServer(server string) (net.IP, int, error) {
 
 // classifyNATType 分类NAT类型
 func (n *NATSniffer) classifyNATType(localIP, publicIP net.IP, publicPort int) (NATType, string, error) {
-	n.logger.Debugf("开始分类NAT类型 - 本地IP: %s, 公网IP: %s:%d", localIP.String(), publicIP.String(), publicPort)
+	fmt.Printf("开始分类NAT类型 - 本地IP: %s, 公网IP: %s:%d \n", localIP.String(), publicIP.String(), publicPort)
 
 	// 1. 检查是否为公网IP（无NAT）
 	if localIP.Equal(publicIP) {
@@ -213,21 +230,21 @@ func (n *NATSniffer) performDetailedNATTest(localIP, publicIP net.IP, publicPort
 
 		ip, port, err := n.querySTUNServer(server)
 		if err != nil {
-			n.logger.Debugf("STUN服务器 %s 测试失败: %v", server, err)
+			fmt.Printf("STUN服务器 %s 测试失败: %v \n", server, err)
 			continue
 		}
 
 		portMappings[port] = true
 		ipMappings[ip.String()] = true
 
-		n.logger.Debugf("STUN服务器 %s 返回: %s:%d", server, ip.String(), port)
+		fmt.Printf("STUN服务器 %s 返回: %s:%d \n", server, ip.String(), port)
 	}
 
 	// 分析映射行为
 	uniquePorts := len(portMappings)
 	uniqueIPs := len(ipMappings)
 
-	n.logger.Debugf("NAT映射分析 - 唯一端口数: %d, 唯一IP数: %d", uniquePorts, uniqueIPs)
+	fmt.Printf("NAT映射分析 - 唯一端口数: %d, 唯一IP数: %d \n", uniquePorts, uniqueIPs)
 
 	// 基于映射行为判断NAT类型
 	if uniqueIPs == 1 && uniquePorts == 1 {
