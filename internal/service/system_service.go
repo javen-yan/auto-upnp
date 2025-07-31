@@ -1,11 +1,12 @@
 package service
 
 import (
+	"auto-upnp/internal/types"
 	"auto-upnp/internal/util"
 )
 
 type SystemService struct {
-	NatDetail *util.NATDetail `json:"nat_detail"`
+	NatInfo *types.NATInfo `json:"nat_info"`
 }
 
 var SystemServiceInstance *SystemService
@@ -18,7 +19,7 @@ func NewSystemService() error {
 		return err
 	}
 	SystemServiceInstance = &SystemService{
-		NatDetail: natInfo.ToDetail(),
+		NatInfo: natInfo,
 	}
 	return nil
 }

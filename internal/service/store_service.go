@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"auto-upnp/internal/port_mapping"
+	"auto-upnp/internal/portmapping"
 
 	"github.com/sirupsen/logrus"
 )
@@ -16,7 +16,7 @@ import (
 type StoreService struct {
 	filePath           string
 	logger             *logrus.Logger
-	portMappingManager *port_mapping.PortMappingManager
+	portMappingManager *portmapping.PortMappingManager
 	mutex              sync.RWMutex
 }
 
@@ -29,7 +29,7 @@ type StoredMapping struct {
 }
 
 // NewStoreService 创建新的存储服务
-func NewStoreService(dataDir string, logger *logrus.Logger, portMappingManager *port_mapping.PortMappingManager) *StoreService {
+func NewStoreService(dataDir string, logger *logrus.Logger, portMappingManager *portmapping.PortMappingManager) *StoreService {
 	if dataDir == "" {
 		dataDir = "."
 	}
@@ -108,7 +108,7 @@ func (ss *StoreService) Recover() error {
 			m.ExternalPort,
 			m.Protocol,
 			m.Description,
-			port_mapping.MappingAddTypeManual,
+			portmapping.MappingAddTypeManual,
 		)
 		if err != nil {
 			ss.logger.WithError(err).Warnf("恢复映射失败: %d->%d %s", m.InternalPort, m.ExternalPort, m.Protocol)

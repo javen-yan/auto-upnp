@@ -1,6 +1,7 @@
 package util
 
 import (
+	"auto-upnp/internal/types"
 	"context"
 	"fmt"
 	"net"
@@ -15,47 +16,6 @@ type NATSniffer struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	stunServers []string
-}
-
-// NATType 网络类型枚举
-type NATType int
-
-const (
-	NATTypeUnknown NATType = iota
-	NATType1               // 完全锥形NAT (Full Cone NAT)
-	NATType2               // 受限锥形NAT (Restricted Cone NAT)
-	NATType3               // 端口受限锥形NAT (Port Restricted Cone NAT)
-	NATType4               // 对称NAT (Symmetric NAT)
-)
-
-// NATInfo NAT信息
-type NATInfo struct {
-	Type        NATType
-	PublicIP    net.IP
-	PublicPort  int
-	LocalIP     net.IP
-	LocalPort   int
-	Description string
-}
-
-func (n *NATInfo) ToDetail() *NATDetail {
-	return &NATDetail{
-		Type:        n.Type.String(),
-		PublicIP:    n.PublicIP.String(),
-		PublicPort:  n.PublicPort,
-		LocalIP:     n.LocalIP.String(),
-		LocalPort:   n.LocalPort,
-		Description: n.Description,
-	}
-}
-
-type NATDetail struct {
-	Type        string `json:"type"`
-	PublicIP    string `json:"public_ip"`
-	PublicPort  int    `json:"public_port"`
-	LocalIP     string `json:"local_ip"`
-	LocalPort   int    `json:"local_port"`
-	Description string `json:"description"`
 }
 
 // 公共STUN服务器列表
@@ -84,7 +44,7 @@ func (n *NATSniffer) Close() {
 }
 
 // DetectNATType 检测NAT类型
-func (n *NATSniffer) DetectNATType() (*NATInfo, error) {
+func (n *NATSniffer) DetectNATType() (*types.NATInfo, error) {
 	fmt.Println("开始检测NAT类型...")
 
 	// 获取本地IP
@@ -105,7 +65,7 @@ func (n *NATSniffer) DetectNATType() (*NATInfo, error) {
 		return nil, fmt.Errorf("分类NAT类型失败: %w", err)
 	}
 
-	natInfo := &NATInfo{
+	natInfo := &types.NATInfo{
 		Type:        natType,
 		PublicIP:    publicIP,
 		PublicPort:  publicPort,
@@ -194,22 +154,22 @@ func (n *NATSniffer) querySTUNServer(server string) (net.IP, int, error) {
 }
 
 // classifyNATType 分类NAT类型
-func (n *NATSniffer) classifyNATType(localIP, publicIP net.IP, publicPort int) (NATType, string, error) {
+func (n *NATSniffer) classifyNATType(localIP, publicIP net.IP, publicPort int) (types.NATType, string, error) {
 	fmt.Printf("开始分类NAT类型 - 本地IP: %s, 公网IP: %s:%d \n", localIP.String(), publicIP.String(), publicPort)
 
 	// 1. 检查是否为公网IP（无NAT）
 	if localIP.Equal(publicIP) {
-		return NATType1, "完全锥形NAT (Full Cone NAT) - 公网IP与本地IP相同，可能无NAT或完全锥形NAT", nil
+		return types.NATType1, "完全锥形NAT (Full Cone NAT) - 公网IP与本地IP相同，可能无NAT或完全锥形NAT", nil
 	}
 
 	// 2. 检查是否为私有IP
 	if !isPrivateIP(localIP) {
-		return NATTypeUnknown, "未知NAT类型 - 本地IP不是私有IP", nil
+		return types.NATTypeUnknown, "未知NAT类型 - 本地IP不是私有IP", nil
 	}
 
 	// 3. 检查公网IP是否为私有IP（可能是双重NAT）
 	if isPrivateIP(publicIP) {
-		return NATType4, "对称NAT (Symmetric NAT) - 公网IP也是私有IP，可能是双重NAT", nil
+		return types.NATType4, "对称NAT (Symmetric NAT) - 公网IP也是私有IP，可能是双重NAT", nil
 	}
 
 	// 4. 进行更详细的NAT类型检测
@@ -217,7 +177,7 @@ func (n *NATSniffer) classifyNATType(localIP, publicIP net.IP, publicPort int) (
 }
 
 // performDetailedNATTest 执行详细的NAT类型测试
-func (n *NATSniffer) performDetailedNATTest(localIP, publicIP net.IP, publicPort int) (NATType, string, error) {
+func (n *NATSniffer) performDetailedNATTest(localIP, publicIP net.IP, publicPort int) (types.NATType, string, error) {
 	// 测试多个STUN服务器来检测端口映射行为
 	portMappings := make(map[int]bool)
 	ipMappings := make(map[string]bool)
@@ -249,16 +209,16 @@ func (n *NATSniffer) performDetailedNATTest(localIP, publicIP net.IP, publicPort
 	// 基于映射行为判断NAT类型
 	if uniqueIPs == 1 && uniquePorts == 1 {
 		// 所有测试返回相同的IP和端口
-		return NATType1, "完全锥形NAT (Full Cone NAT) - 所有STUN服务器返回相同的映射", nil
+		return types.NATType1, "完全锥形NAT (Full Cone NAT) - 所有STUN服务器返回相同的映射", nil
 	} else if uniqueIPs == 1 && uniquePorts > 1 {
 		// 相同IP但不同端口
-		return NATType2, "受限锥形NAT (Restricted Cone NAT) - 相同IP但端口映射变化", nil
+		return types.NATType2, "受限锥形NAT (Restricted Cone NAT) - 相同IP但端口映射变化", nil
 	} else if uniqueIPs > 1 {
 		// 不同IP映射
-		return NATType4, "对称NAT (Symmetric NAT) - 不同STUN服务器返回不同IP映射", nil
+		return types.NATType4, "对称NAT (Symmetric NAT) - 不同STUN服务器返回不同IP映射", nil
 	} else {
 		// 默认情况，基于统计概率
-		return NATType3, "端口受限锥形NAT (Port Restricted Cone NAT) - 最常见的NAT类型", nil
+		return types.NATType3, "端口受限锥形NAT (Port Restricted Cone NAT) - 最常见的NAT类型", nil
 	}
 }
 
@@ -296,22 +256,6 @@ func inRange(ip, start, end net.IP) bool {
 func bytes2Int(ip net.IP) uint32 {
 	ip = ip.To4()
 	return uint32(ip[0])<<24 + uint32(ip[1])<<16 + uint32(ip[2])<<8 + uint32(ip[3])
-}
-
-// GetNATTypeString 获取NAT类型的字符串表示
-func (n NATType) String() string {
-	switch n {
-	case NATType1:
-		return "NAT1 (完全锥形NAT)"
-	case NATType2:
-		return "NAT2 (受限锥形NAT)"
-	case NATType3:
-		return "NAT3 (端口受限锥形NAT)"
-	case NATType4:
-		return "NAT4 (对称NAT)"
-	default:
-		return "未知NAT类型"
-	}
 }
 
 // TestAllSTUNServers 测试所有STUN服务器
@@ -363,7 +307,7 @@ func (n *NATSniffer) GetDetailedNATInfo() (*DetailedNATInfo, error) {
 
 // DetailedNATInfo 详细的NAT信息
 type DetailedNATInfo struct {
-	BasicInfo       *NATInfo
+	BasicInfo       *types.NATInfo
 	STUNResults     map[string]error
 	Analysis        *STUNAnalysis
 	Recommendations []string
@@ -411,32 +355,32 @@ func (n *NATSniffer) analyzeSTUNResults(results map[string]error) *STUNAnalysis 
 }
 
 // getRecommendations 根据NAT类型获取建议
-func (n *NATSniffer) getRecommendations(natType NATType) []string {
+func (n *NATSniffer) getRecommendations(natType types.NATType) []string {
 	var recommendations []string
 
 	switch natType {
-	case NATType1:
+	case types.NATType1:
 		recommendations = []string{
 			"✓ 您的网络环境非常适合P2P连接",
 			"✓ 可以直接使用UPnP进行端口映射",
 			"✓ 支持所有类型的NAT穿透技术",
 			"✓ 建议启用UPnP自动端口映射",
 		}
-	case NATType2:
+	case types.NATType2:
 		recommendations = []string{
 			"✓ 您的网络环境适合P2P连接",
 			"✓ 需要先与目标主机通信才能建立连接",
 			"✓ 建议使用ICE协议进行连接",
 			"✓ 可以尝试UPnP端口映射",
 		}
-	case NATType3:
+	case types.NATType3:
 		recommendations = []string{
 			"⚠ 您的网络环境需要特殊处理",
 			"⚠ 建议使用TURN服务器进行中继",
 			"⚠ 可以尝试UPnP但可能不成功",
 			"⚠ 考虑使用STUN+TURN组合方案",
 		}
-	case NATType4:
+	case types.NATType4:
 		recommendations = []string{
 			"✗ 您的网络环境最难穿透",
 			"✗ 强烈建议使用TURN服务器",
@@ -462,11 +406,11 @@ func (n *NATSniffer) IsNATFriendly() (bool, string) {
 	}
 
 	switch natInfo.Type {
-	case NATType1, NATType2:
+	case types.NATType1, types.NATType2:
 		return true, "NAT类型适合P2P连接"
-	case NATType3:
+	case types.NATType3:
 		return false, "NAT类型需要特殊处理"
-	case NATType4:
+	case types.NATType4:
 		return false, "NAT类型不适合P2P连接"
 	default:
 		return false, "未知NAT类型"

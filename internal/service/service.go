@@ -1,7 +1,7 @@
 package service
 
 import (
-	"auto-upnp/internal/port_mapping"
+	"auto-upnp/internal/portmapping"
 )
 
 // Service 服务接口
@@ -22,7 +22,7 @@ type Service interface {
 	RemoveManualMapping(internalPort, externalPort int, protocol string) error
 
 	// GetPortMappings 获取所有端口映射
-	GetPortMappings(addType string) []port_mapping.PortMapping
+	GetPortMappings(addType string) []portmapping.PortMapping
 
 	// GetActivePorts 获取活跃端口列表
 	GetActivePorts() []int

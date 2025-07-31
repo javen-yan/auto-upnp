@@ -5,6 +5,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"auto-upnp/internal/types"
 )
 
 func NATSnifferTry() {
@@ -105,14 +107,14 @@ type NetworkAssessment struct {
 }
 
 // getNetworkAssessment 获取网络环境评估
-func getNetworkAssessment(natType NATType, successCount, totalServers int) NetworkAssessment {
+func getNetworkAssessment(natType types.NATType, successCount, totalServers int) NetworkAssessment {
 	successRate := float64(successCount) / float64(totalServers)
 
 	var score, result, action string
 
 	// 基于NAT类型和STUN成功率评估
 	switch natType {
-	case NATType1:
+	case types.NATType1:
 		if successRate >= 0.5 {
 			score = "A+ (优秀)"
 			result = "网络环境非常适合P2P连接"
@@ -122,7 +124,7 @@ func getNetworkAssessment(natType NATType, successCount, totalServers int) Netwo
 			result = "网络环境适合P2P连接，但STUN服务器连接不稳定"
 			action = "建议配置更多STUN服务器或使用TURN备用方案"
 		}
-	case NATType2:
+	case types.NATType2:
 		if successRate >= 0.5 {
 			score = "A (良好)"
 			result = "网络环境适合P2P连接"
@@ -132,7 +134,7 @@ func getNetworkAssessment(natType NATType, successCount, totalServers int) Netwo
 			result = "网络环境基本适合P2P，但需要优化"
 			action = "建议使用TURN服务器作为备用方案"
 		}
-	case NATType3:
+	case types.NATType3:
 		if successRate >= 0.5 {
 			score = "C+ (可接受)"
 			result = "网络环境需要特殊处理"
@@ -142,7 +144,7 @@ func getNetworkAssessment(natType NATType, successCount, totalServers int) Netwo
 			result = "网络环境较难穿透"
 			action = "强烈建议使用TURN服务器或VPN"
 		}
-	case NATType4:
+	case types.NATType4:
 		score = "D (困难)"
 		result = "网络环境最难穿透"
 		action = "必须使用TURN服务器或考虑VPN方案"

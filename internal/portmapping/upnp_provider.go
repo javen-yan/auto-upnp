@@ -1,4 +1,4 @@
-package port_mapping
+package portmapping
 
 import (
 	"context"

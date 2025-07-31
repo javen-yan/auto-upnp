@@ -174,7 +174,7 @@ func (as *AdminServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// system service
 	status["system_service"] = map[string]interface{}{
-		"nat_detail": service.SystemServiceInstance.NatDetail,
+		"nat_detail": service.SystemServiceInstance.NatInfo,
 	}
 
 	as.writeJSON(w, status)
