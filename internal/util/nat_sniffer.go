@@ -27,8 +27,13 @@ var PublicSTUNServers = []string{
 }
 
 // NewNATSniffer 创建新的NAT嗅探器
-func NewNATSniffer() *NATSniffer {
+func NewNATSniffer(stunServers []string) *NATSniffer {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	if stunServers == nil {
+		stunServers = PublicSTUNServers
+	}
+
 	return &NATSniffer{
 		ctx:         ctx,
 		cancel:      cancel,

@@ -1,7 +1,6 @@
 package types
 
 import (
-	"encoding/json"
 	"net"
 )
 
@@ -40,15 +39,17 @@ type NATInfo struct {
 	Description string  `json:"description"`
 }
 
-func (n *NATInfo) String() string {
-	temp := struct {
-		Type        string `json:"type"`
-		PublicIP    net.IP `json:"public_ip"`
-		PublicPort  int    `json:"public_port"`
-		LocalIP     net.IP `json:"local_ip"`
-		LocalPort   int    `json:"local_port"`
-		Description string `json:"description"`
-	}{
+type NATHumanInfo struct {
+	Type        string `json:"type"`
+	PublicIP    net.IP `json:"public_ip"`
+	PublicPort  int    `json:"public_port"`
+	LocalIP     net.IP `json:"local_ip"`
+	LocalPort   int    `json:"local_port"`
+	Description string `json:"description"`
+}
+
+func (n *NATInfo) ToHumanInfo() *NATHumanInfo {
+	return &NATHumanInfo{
 		Type:        n.Type.String(),
 		PublicIP:    n.PublicIP,
 		PublicPort:  n.PublicPort,
@@ -56,10 +57,4 @@ func (n *NATInfo) String() string {
 		LocalPort:   n.LocalPort,
 		Description: n.Description,
 	}
-
-	json, err := json.Marshal(temp)
-	if err != nil {
-		return ""
-	}
-	return string(json)
 }

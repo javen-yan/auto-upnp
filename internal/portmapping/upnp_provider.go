@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"auto-upnp/config"
+	"auto-upnp/internal/types"
 	"auto-upnp/internal/upnp"
 	"auto-upnp/internal/util"
 
@@ -54,8 +55,8 @@ func NewUPnPProvider(logger *logrus.Logger, configMap map[string]interface{}) *U
 }
 
 // Type 返回提供者类型
-func (up *UPnPProvider) Type() MappingType {
-	return MappingTypeUPnP
+func (up *UPnPProvider) Type() types.MappingType {
+	return types.MappingTypeUPnP
 }
 
 // Name 返回提供者名称
@@ -119,7 +120,7 @@ func (up *UPnPProvider) Stop() error {
 }
 
 // CreateMapping 创建UPnP端口映射
-func (up *UPnPProvider) CreateMapping(port int, externalPort int, protocol, description string, addType MappingAddType) (*PortMapping, error) {
+func (up *UPnPProvider) CreateMapping(port int, externalPort int, protocol, description string, addType types.MappingAddType) (*PortMapping, error) {
 	if !up.IsAvailable() {
 		return nil, fmt.Errorf("UPnP提供者不可用")
 	}
@@ -153,8 +154,8 @@ func (up *UPnPProvider) CreateMapping(port int, externalPort int, protocol, desc
 		Protocol:     protocol,
 		Description:  description,
 		AddType:      addType,
-		Type:         MappingTypeUPnP,
-		Status:       MappingStatusActive,
+		Type:         types.MappingTypeUPnP,
+		Status:       types.MappingStatusActive,
 		CreatedAt:    time.Now(),
 		LastActivity: time.Now(),
 	}
@@ -165,14 +166,14 @@ func (up *UPnPProvider) CreateMapping(port int, externalPort int, protocol, desc
 		"port":          port,
 		"external_port": externalPort,
 		"protocol":      protocol,
-		"type":          MappingTypeUPnP,
+		"type":          types.MappingTypeUPnP,
 	}).Info("UPnP端口映射创建成功")
 
 	return mapping, nil
 }
 
 // RemoveMapping 移除UPnP端口映射
-func (up *UPnPProvider) RemoveMapping(port int, externalPort int, protocol string, addType MappingAddType) error {
+func (up *UPnPProvider) RemoveMapping(port int, externalPort int, protocol string, addType types.MappingAddType) error {
 	mappingKey := fmt.Sprintf("%d:%d:%s", port, externalPort, protocol)
 
 	up.mutex.Lock()
@@ -201,7 +202,7 @@ func (up *UPnPProvider) RemoveMapping(port int, externalPort int, protocol strin
 		"port":          port,
 		"external_port": externalPort,
 		"protocol":      protocol,
-		"type":          MappingTypeUPnP,
+		"type":          types.MappingTypeUPnP,
 	}).Info("UPnP端口映射移除成功")
 
 	return nil
@@ -226,7 +227,7 @@ func (up *UPnPProvider) GetStatus() map[string]interface{} {
 
 	activeCount := 0
 	for _, mapping := range up.mappings {
-		if mapping.Status == MappingStatusActive {
+		if mapping.Status == types.MappingStatusActive {
 			activeCount++
 		}
 	}
@@ -279,7 +280,7 @@ func (sp *UPnPProvider) checkPortStatus() {
 	sp.mutex.RLock()
 	allManualMappings := make([]*PortMapping, 0)
 	for _, mapping := range sp.mappings {
-		if mapping.AddType == MappingAddTypeManual {
+		if mapping.AddType == types.MappingAddTypeManual {
 			allManualMappings = append(allManualMappings, mapping)
 		}
 	}
@@ -288,9 +289,9 @@ func (sp *UPnPProvider) checkPortStatus() {
 	for _, mapping := range allManualMappings {
 		oldMapStatus := mapping.Status
 		portStatus := util.IsPortActive(mapping.InternalPort)
-		newMapStatus := MappingStatusInactive
+		newMapStatus := types.MappingStatusInactive
 		if portStatus.Open {
-			newMapStatus = MappingStatusActive
+			newMapStatus = types.MappingStatusActive
 		}
 		if oldMapStatus != newMapStatus {
 			sp.updateMappingStatus(mapping, newMapStatus)
@@ -298,7 +299,7 @@ func (sp *UPnPProvider) checkPortStatus() {
 	}
 }
 
-func (sp *UPnPProvider) updateMappingStatus(mapping *PortMapping, status MappingStatus) {
+func (sp *UPnPProvider) updateMappingStatus(mapping *PortMapping, status types.MappingStatus) {
 	sp.mutex.Lock()
 	defer sp.mutex.Unlock()
 

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"auto-upnp/internal/portmapping"
+	"auto-upnp/internal/types"
 
 	"github.com/sirupsen/logrus"
 )
@@ -108,7 +109,7 @@ func (ss *StoreService) Recover() error {
 			m.ExternalPort,
 			m.Protocol,
 			m.Description,
-			portmapping.MappingAddTypeManual,
+			types.MappingAddTypeManual,
 		)
 		if err != nil {
 			ss.logger.WithError(err).Warnf("恢复映射失败: %d->%d %s", m.InternalPort, m.ExternalPort, m.Protocol)

@@ -86,13 +86,10 @@ cd auto-upnp
 # 2. 安装依赖
 go mod tidy
 
-# 3. 构建项目（推荐静态编译）
-./build-static.sh
-
-# 4. 复制配置文件
+# 3. 复制配置文件
 cp config.yaml /etc/auto-upnp/config.yaml
 
-# 5. 安装到系统
+# 4. 安装到系统
 sudo cp build/auto-upnp-static /usr/local/bin/auto-upnp
 ```
 

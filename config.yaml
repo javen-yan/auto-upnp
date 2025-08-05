@@ -19,13 +19,12 @@ upnp:
 # NAT穿透配置
 nat_traversal:
   enabled: true            # 是否启用NAT穿透功能
-  use_turn: true            # 启用TURN服务器
-  turn_servers:             # TURN服务器列表
-    - host: 47.104.139.35
-      port: 3478
-      username: "admin"
-      password: "Flzx3qc@2025"
-      realm: "turn.ealine.cn"
+  stun_servers:
+    - stun.ealine.cn:3478
+    - stun.miwifi.com:3478
+    - stun.chat.bilibili.com:3478
+    - stun.hitv.com:3478
+    - stun.cdnbye.com:3478
 
 # 网络接口配置
 network:

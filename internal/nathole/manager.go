@@ -13,16 +13,11 @@ type NATHolePunching struct {
 	logger   *logrus.Logger
 	natInfo  *types.NATInfo
 	provider NATHoleProvider
-
-	// 回调函数
-	onHoleCreated func(localPort int, externalPort int, protocol string, natType types.NATType)
-	onHoleRemoved func(localPort int, externalPort int, protocol string, natType types.NATType)
-	onHoleFailed  func(localPort int, externalPort int, protocol string, natType types.NATType, error error)
 }
 
 // NewNATHolePunching 创建新的NAT穿透管理器
-func NewNATHolePunching(logger *logrus.Logger, natInfo *types.NATInfo) *NATHolePunching {
-	provider, err := CreateNATHoleProvider(natInfo.Type, logger, nil)
+func NewNATHolePunching(logger *logrus.Logger, natInfo *types.NATInfo, config map[string]interface{}) *NATHolePunching {
+	provider, err := CreateNATHoleProvider(natInfo.Type, logger, config)
 	if err != nil {
 		logger.WithField("nat_type", natInfo.Type).Error("创建NAT穿透提供者失败")
 		return nil
@@ -83,10 +78,6 @@ func (n *NATHolePunching) CreateHole(localPort int, externalPort int, protocol, 
 				"protocol":   protocol,
 				"type":       n.provider.Type(),
 			}).Info("创建NAT穿透成功")
-
-			if n.onHoleCreated != nil {
-				n.onHoleCreated(localPort, hole.ExternalPort, protocol, n.provider.Type())
-			}
 			return hole, nil
 		}
 		n.logger.WithFields(logrus.Fields{
@@ -115,10 +106,6 @@ func (n *NATHolePunching) RemoveHole(localPort int, externalPort int, protocol s
 				"protocol":   protocol,
 				"type":       n.provider.Type(),
 			}).Info("从提供者移除NAT穿透成功")
-
-			if n.onHoleRemoved != nil {
-				n.onHoleRemoved(localPort, externalPort, protocol, n.provider.Type())
-			}
 		}
 	}
 
@@ -151,13 +138,22 @@ func (n *NATHolePunching) GetStatus() map[string]interface{} {
 	return nil
 }
 
-// SetCallbacks 设置回调函数
-func (n *NATHolePunching) SetCallbacks(
-	onHoleCreated func(localPort int, externalPort int, protocol string, natType types.NATType),
-	onHoleRemoved func(localPort int, externalPort int, protocol string, natType types.NATType),
-	onHoleFailed func(localPort int, externalPort int, protocol string, natType types.NATType, error error),
-) {
-	n.onHoleCreated = onHoleCreated
-	n.onHoleRemoved = onHoleRemoved
-	n.onHoleFailed = onHoleFailed
+// GetExternalAddress 获取外部地址
+func (n *NATHolePunching) GetExternalAddress() *types.NATInfo {
+	return n.natInfo
+}
+
+// GetActiveHoles 获取所有活跃的穿透
+func (n *NATHolePunching) GetActiveHoles() []*NATHole {
+	activeHoles := make([]*NATHole, 0)
+
+	if n.provider != nil {
+		holes := n.provider.GetHoles()
+		for _, hole := range holes {
+			if hole.Status == types.MappingStatusActive {
+				activeHoles = append(activeHoles, hole)
+			}
+		}
+	}
+	return activeHoles
 }

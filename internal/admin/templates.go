@@ -923,7 +923,7 @@ const adminHTML = `<!DOCTYPE html>
     <div class="container">
         <div class="header">
             <h1>Auto UPnP 管理界面</h1>
-            <p>自动端口映射管理服务 UPnP + TURN</p>
+            <p>自动端口映射管理服务 UPnP + NAT</p>
 
             <!-- GitHub 链接 -->
             <div class="github-links">
@@ -1034,7 +1034,7 @@ const adminHTML = `<!DOCTYPE html>
                         <div class="form-group">
                             <label for="protocol">协议</label>
                             <select id="protocol" name="protocol">
-                                <option value="TCP">TCP</option>
+                                <option value="tcp">tcp</option>
                                 <option value="UDP">UDP</option>
                             </select>
                         </div>
@@ -1177,7 +1177,7 @@ const adminHTML = `<!DOCTYPE html>
                     '</div>' +
                     '<div class="status-card">' +
                         '<h3>NAT穿透</h3>' +
-                        '<div class="value">' + (data.port_mapping_status?.turn?.available ? '可用' : '不可用') + '</div>'
+                        '<div class="value">' + (data.port_mapping_status?.nat?.available ? '可用' : '不可用') + '</div>'
                     '</div>';
 
                 const systemStatus = document.getElementById('system-status');
@@ -1249,7 +1249,7 @@ const adminHTML = `<!DOCTYPE html>
                     const statusClass = mapping.status === 'active' ? 'active' : 'inactive';
                     const statusText = mapping.status === 'active' ? '活跃' : '非活跃';
                     const typeText = mapping.type || '未知';
-                    const isTurn = typeText.toLowerCase() === 'turn';
+                    const isTurn = typeText.toLowerCase() === 'nat';
                     
                     let externalPort = mapping.external_port || '-';
                     let showPort = mapping.external_port || '-';
@@ -1272,7 +1272,7 @@ const adminHTML = `<!DOCTYPE html>
                             '<td class="col-status"><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
                             '<td class="col-time">' + createdAt + '</td>' +
                             '<td class="col-action">' +
-                                '<button class="btn btn-danger" onclick="removeMapping(' + (mapping.internal_port || 0) + ', ' + externalPort + ', \'' + (mapping.protocol || 'TCP') + '\')">' +
+                                '<button class="btn btn-danger" onclick="removeMapping(' + (mapping.internal_port || 0) + ', ' + externalPort + ', \'' + (mapping.protocol || 'tcp') + '\')">' +
                                     '删除' +
                                 '</button>' +
                             '</td>' +
@@ -1332,7 +1332,7 @@ const adminHTML = `<!DOCTYPE html>
                     const statusClass = mapping.status === 'active' ? 'active' : 'inactive';
                     const statusText = mapping.status === 'active' ? '活跃' : '非活跃';
                     const typeText = mapping.type || '未知';
-                    const isTurn = typeText.toLowerCase() === 'turn';
+                    const isTurn = typeText.toLowerCase() === 'nat';
                     
                     let showPort = mapping.external_port || '-';
                     let externalPort =  mapping.external_port || '-';
@@ -1355,7 +1355,7 @@ const adminHTML = `<!DOCTYPE html>
                             '<td class="col-status"><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
                             '<td class="col-time">' + createdAt + '</td>' +
                             '<td class="col-action">' +
-                                '<button class="btn btn-danger" onclick="removeMapping(' + (mapping.internal_port || 0) + ', ' + externalPort + ', \'' + (mapping.protocol || 'TCP') + '\')">' +
+                                '<button class="btn btn-danger" onclick="removeMapping(' + (mapping.internal_port || 0) + ', ' + externalPort + ', \'' + (mapping.protocol || 'tcp') + '\')">' +
                                     '删除' +
                                 '</button>' +
                             '</td>' +
@@ -1427,7 +1427,7 @@ const adminHTML = `<!DOCTYPE html>
             const requestData = {
                 internal_port: parseInt(formData.get('internal_port')),
                 external_port: parseInt(formData.get('external_port')),
-                protocol: formData.get('protocol') || 'TCP',
+                protocol: formData.get('protocol') || 'tcp',
                 description: formData.get('description') || ''
             };
             
@@ -1488,7 +1488,7 @@ const adminHTML = `<!DOCTYPE html>
             const requestData = {
                 internal_port: parseInt(internalPort),
                 external_port: parseInt(externalPort),
-                protocol: protocol || 'TCP'
+                protocol: protocol || 'tcp'
             };
             
             try {

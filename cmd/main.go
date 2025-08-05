@@ -137,8 +137,9 @@ func runMain(cmd *cobra.Command, args []string) error {
 	}
 
 	// 创建系统服务
-	if err := service.NewSystemService(); err != nil {
+	if err := service.NewSystemService(cfg); err != nil {
 		logger.WithError(err).Fatal("创建系统服务失败")
+		os.Exit(1)
 	}
 
 	// 创建自动UPnP服务

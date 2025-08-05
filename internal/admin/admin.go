@@ -174,7 +174,7 @@ func (as *AdminServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// system service
 	status["system_service"] = map[string]interface{}{
-		"nat_detail": service.SystemServiceInstance.NatInfo,
+		"nat_detail": service.SystemServiceInstance.NatInfo.ToHumanInfo(),
 	}
 
 	as.writeJSON(w, status)
@@ -235,7 +235,7 @@ func (as *AdminServer) handleAddMapping(w http.ResponseWriter, r *http.Request) 
 
 	// 设置默认值
 	if req.Protocol == "" {
-		req.Protocol = "TCP"
+		req.Protocol = "tcp"
 	}
 
 	if req.Description == "" {

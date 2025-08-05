@@ -21,6 +21,7 @@ type NAT1Provider struct {
 	holes     map[string]*NATHole
 	mutex     sync.RWMutex
 	available bool
+	natInfo   *types.NATInfo
 	config    map[string]interface{}
 }
 
@@ -28,7 +29,7 @@ type NAT1Provider struct {
 func NewNAT1Provider(logger *logrus.Logger, config map[string]interface{}) *NAT1Provider {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &NAT1Provider{
+	p := &NAT1Provider{
 		logger:    logger,
 		ctx:       ctx,
 		cancel:    cancel,
@@ -36,6 +37,10 @@ func NewNAT1Provider(logger *logrus.Logger, config map[string]interface{}) *NAT1
 		available: false,
 		config:    config,
 	}
+	if natInfo, ok := config["nat_info"].(*types.NATInfo); ok {
+		p.natInfo = natInfo
+	}
+	return p
 }
 
 // Type 返回NAT类型
@@ -45,7 +50,7 @@ func (n *NAT1Provider) Type() types.NATType {
 
 // Name 返回提供者名称
 func (n *NAT1Provider) Name() string {
-	return "NAT1提供者（完全锥形NAT）"
+	return "NAT1Provider"
 }
 
 // IsAvailable 检查是否可用
@@ -76,8 +81,8 @@ func (n *NAT1Provider) Stop() error {
 	defer n.mutex.Unlock()
 
 	for _, hole := range n.holes {
-		if hole.Status == HoleStatusActive {
-			hole.Status = HoleStatusInactive
+		if hole.Status == types.MappingStatusActive {
+			hole.Status = types.MappingStatusInactive
 		}
 	}
 
@@ -98,7 +103,7 @@ func (n *NAT1Provider) CreateHole(localPort int, externalPort int, protocol stri
 
 	// 检查是否已存在
 	if existing, exists := n.holes[key]; exists {
-		if existing.Status == HoleStatusActive {
+		if existing.Status == types.MappingStatusActive {
 			return existing, nil
 		}
 	}
@@ -110,53 +115,77 @@ func (n *NAT1Provider) CreateHole(localPort int, externalPort int, protocol stri
 		Protocol:     protocol,
 		Description:  description,
 		Type:         types.NATType1,
-		Status:       HoleStatusActive,
+		Status:       types.MappingStatusActive,
 		CreatedAt:    time.Now(),
 		LastActivity: time.Now(),
 	}
 
+	// 首先尝试使用目标端口，如果失败则使用随机端口
+	listenPort := externalPort
+	useRandomPort := false
+
 	// 根据协议类型选择不同的监听方式
 	switch protocol {
 	case "tcp":
-		// TCP协议使用Listener
-		listener, err := net.Listen(protocol, fmt.Sprintf(":%d", externalPort))
+		// 首先尝试使用目标端口
+		listener, err := net.Listen(protocol, fmt.Sprintf(":%d", listenPort))
 		if err != nil {
-			// 检查是否是端口冲突
-			if localPort == externalPort {
-				hole.Status = HoleStatusFailed
-				hole.Error = fmt.Sprintf("内外端口一致(%d)且端口已被占用，无法创建NAT穿透", externalPort)
-				n.holes[key] = hole
-				return hole, fmt.Errorf("内外端口一致(%d)且端口已被占用，无法创建NAT穿透", externalPort)
-			}
-			hole.Status = HoleStatusFailed
-			hole.Error = fmt.Sprintf("无法监听外部端口 %d: %v", externalPort, err)
-			n.holes[key] = hole
-			return hole, fmt.Errorf("无法监听外部端口 %d: %w", externalPort, err)
+			// 如果目标端口被占用，尝试使用随机端口
+			n.logger.WithFields(logrus.Fields{
+				"target_port": externalPort,
+				"error":       err,
+			}).Warn("目标端口被占用，尝试使用随机端口")
+
+			listenPort = 0 // 使用随机端口
+			listener, err = net.Listen(protocol, fmt.Sprintf(":%d", listenPort))
+			useRandomPort = true
 		}
+
+		if err != nil {
+			hole.Status = types.MappingStatusFailed
+			hole.Error = fmt.Sprintf("无法监听TCP端口: %v", err)
+			n.holes[key] = hole
+			return hole, fmt.Errorf("无法监听TCP端口: %w", err)
+		}
+
+		// 获取实际监听的端口
+		actualPort := listener.Addr().(*net.TCPAddr).Port
+		hole.ExternalPort = actualPort      // 更新为实际监听的端口
+		hole.ExternalAddr = listener.Addr() // 设置外部地址
 
 		// 启动TCP监听协程
 		go n.handleTCPConnections(listener, hole)
 	case "udp":
-		// UDP协议使用PacketConn
-		packetConn, err := net.ListenPacket(protocol, fmt.Sprintf(":%d", externalPort))
+		// 首先尝试使用目标端口
+		packetConn, err := net.ListenPacket(protocol, fmt.Sprintf(":%d", listenPort))
 		if err != nil {
-			// 检查是否是端口冲突
-			if localPort == externalPort {
-				hole.Status = HoleStatusFailed
-				hole.Error = fmt.Sprintf("内外端口一致(%d)且端口已被占用，无法创建NAT穿透", externalPort)
-				n.holes[key] = hole
-				return hole, fmt.Errorf("内外端口一致(%d)且端口已被占用，无法创建NAT穿透", externalPort)
-			}
-			hole.Status = HoleStatusFailed
-			hole.Error = fmt.Sprintf("无法监听外部UDP端口 %d: %v", externalPort, err)
-			n.holes[key] = hole
-			return hole, fmt.Errorf("无法监听外部UDP端口 %d: %w", externalPort, err)
+			// 如果目标端口被占用，尝试使用随机端口
+			n.logger.WithFields(logrus.Fields{
+				"target_port": externalPort,
+				"error":       err,
+			}).Warn("目标端口被占用，尝试使用随机端口")
+
+			listenPort = 0 // 使用随机端口
+			packetConn, err = net.ListenPacket(protocol, fmt.Sprintf(":%d", listenPort))
+			useRandomPort = true
 		}
+
+		if err != nil {
+			hole.Status = types.MappingStatusFailed
+			hole.Error = fmt.Sprintf("无法监听UDP端口: %v", err)
+			n.holes[key] = hole
+			return hole, fmt.Errorf("无法监听UDP端口: %w", err)
+		}
+
+		// 获取实际监听的端口
+		actualPort := packetConn.LocalAddr().(*net.UDPAddr).Port
+		hole.ExternalPort = actualPort             // 更新为实际监听的端口
+		hole.ExternalAddr = packetConn.LocalAddr() // 设置外部地址
 
 		// 启动UDP监听协程
 		go n.handleUDPConnections(packetConn, hole)
 	default:
-		hole.Status = HoleStatusFailed
+		hole.Status = types.MappingStatusFailed
 		hole.Error = fmt.Sprintf("不支持的协议: %s", protocol)
 		n.holes[key] = hole
 		return hole, fmt.Errorf("不支持的协议: %s", protocol)
@@ -164,11 +193,17 @@ func (n *NAT1Provider) CreateHole(localPort int, externalPort int, protocol stri
 
 	n.holes[key] = hole
 
+	portType := "目标端口"
+	if useRandomPort {
+		portType = "随机端口"
+	}
+
 	n.logger.WithFields(logrus.Fields{
 		"local_port":    localPort,
-		"external_port": externalPort,
+		"external_port": hole.ExternalPort, // 使用实际监听的端口
 		"protocol":      protocol,
 		"type":          "NAT1",
+		"port_type":     portType,
 	}).Info("创建NAT1穿透成功")
 
 	return hole, nil
@@ -182,7 +217,7 @@ func (n *NAT1Provider) RemoveHole(localPort int, externalPort int, protocol stri
 	defer n.mutex.Unlock()
 
 	if hole, exists := n.holes[key]; exists {
-		hole.Status = HoleStatusInactive
+		hole.Status = types.MappingStatusInactive
 		hole.LastActivity = time.Now()
 
 		n.logger.WithFields(logrus.Fields{
@@ -222,11 +257,11 @@ func (n *NAT1Provider) GetStatus() map[string]interface{} {
 
 	for _, hole := range n.holes {
 		switch hole.Status {
-		case HoleStatusActive:
+		case types.MappingStatusActive:
 			activeCount++
-		case HoleStatusInactive:
+		case types.MappingStatusInactive:
 			inactiveCount++
-		case HoleStatusFailed:
+		case types.MappingStatusFailed:
 			failedCount++
 		}
 	}
@@ -237,6 +272,7 @@ func (n *NAT1Provider) GetStatus() map[string]interface{} {
 		"active_holes":   activeCount,
 		"inactive_holes": inactiveCount,
 		"failed_holes":   failedCount,
+		"nat_info":       n.natInfo,
 	}
 }
 

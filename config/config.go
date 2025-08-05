@@ -67,18 +67,8 @@ type AdminConfig struct {
 
 // NATTraversalConfig NAT穿透配置
 type NATTraversalConfig struct {
-	Enabled     bool         `mapstructure:"enabled"`
-	UseTURN     bool         `mapstructure:"use_turn"`
-	TURNServers []TURNServer `mapstructure:"turn_servers"`
-}
-
-// TURNServer TURN服务器配置
-type TURNServer struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	Realm    string `mapstructure:"realm"`
+	Enabled     bool     `mapstructure:"enabled"`
+	STUNServers []string `mapstructure:"stun_servers"`
 }
 
 // LoadConfig 加载配置文件
@@ -113,9 +103,9 @@ func setDefaults() {
 	viper.SetDefault("upnp.mapping_duration", "1h")
 	viper.SetDefault("upnp.retry_attempts", 3)
 	viper.SetDefault("upnp.retry_delay", "5s")
-	viper.SetDefault("upnp.health_check_interval", "1m")
+	viper.SetDefault("upnp.health_check_interval", "30s")
 	viper.SetDefault("upnp.max_fail_count", 3)
-	viper.SetDefault("upnp.keep_alive_interval", "2m")
+	viper.SetDefault("upnp.keep_alive_interval", "1m")
 
 	// 网络默认值
 	viper.SetDefault("network.preferred_interfaces", []string{"eth0", "wlan0"})
@@ -129,7 +119,7 @@ func setDefaults() {
 	viper.SetDefault("log.backup_count", 5)
 
 	// 监控默认值
-	viper.SetDefault("monitor.check_interval", "30s")
+	viper.SetDefault("monitor.check_interval", "10s")
 	viper.SetDefault("monitor.cleanup_interval", "5m")
 
 	// 管理服务默认值
@@ -141,15 +131,11 @@ func setDefaults() {
 
 	// NAT穿透默认值
 	viper.SetDefault("nat_traversal.enabled", false)
-	viper.SetDefault("nat_traversal.use_turn", true)
-	viper.SetDefault("nat_traversal.turn_servers", []map[string]interface{}{
-		{
-			"host":     "47.104.139.35",
-			"port":     3478,
-			"username": "admin",
-			"password": "Flzx@2025",
-			"realm":    "turn.ealine.cn",
-		},
+	viper.SetDefault("nat_traversal.stun_servers", []string{
+		"stun.miwifi.com:3478",
+		"stun.chat.bilibili.com:3478",
+		"stun.hitv.com:3478",
+		"stun.cdnbye.com:3478",
 	})
 }
 

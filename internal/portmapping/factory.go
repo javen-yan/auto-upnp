@@ -1,13 +1,14 @@
 package portmapping
 
 import (
+	"auto-upnp/internal/types"
 	"time"
 )
 
 // PortMappingProvider 端口映射提供者接口
 type PortMappingProvider interface {
 	// Type 返回提供者类型
-	Type() MappingType
+	Type() types.MappingType
 
 	// Name 返回提供者名称
 	Name() string
@@ -16,10 +17,10 @@ type PortMappingProvider interface {
 	IsAvailable() bool
 
 	// CreateMapping 创建端口映射
-	CreateMapping(port int, externalPort int, protocol, description string, addType MappingAddType) (*PortMapping, error)
+	CreateMapping(port int, externalPort int, protocol, description string, addType types.MappingAddType) (*PortMapping, error)
 
 	// RemoveMapping 移除端口映射
-	RemoveMapping(port int, externalPort int, protocol string, addType MappingAddType) error
+	RemoveMapping(port int, externalPort int, protocol string, addType types.MappingAddType) error
 
 	// GetMappings 获取所有映射
 	GetMappings() map[string]*PortMapping

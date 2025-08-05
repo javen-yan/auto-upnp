@@ -1,6 +1,7 @@
 package portmapping
 
 import (
+	"auto-upnp/internal/types"
 	"context"
 	"fmt"
 	"time"
@@ -16,9 +17,9 @@ type PortMappingManager struct {
 	cancel    context.CancelFunc
 
 	// 回调函数
-	onMappingCreated func(port int, externalPort int, protocol string, providerType MappingType, addType MappingAddType)
-	onMappingRemoved func(port int, externalPort int, protocol string, providerType MappingType, addType MappingAddType)
-	onMappingFailed  func(port int, externalPort int, protocol string, providerType MappingType, addType MappingAddType, error error)
+	onMappingCreated func(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType)
+	onMappingRemoved func(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType)
+	onMappingFailed  func(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType, error error)
 }
 
 // NewPortMappingManager 创建新的端口映射管理器
@@ -46,7 +47,7 @@ func (pm *PortMappingManager) AddProvider(provider PortMappingProvider) {
 func (pm *PortMappingManager) Start(checkStatusTaskTime time.Duration) error {
 	pm.logger.Info("启动端口映射管理器")
 
-	// 按优先级启动提供者：UPnP优先，TURN备用
+	// 按优先级启动提供者：UPnP优先，NAT备用
 	var availableProviders []PortMappingProvider
 
 	for _, provider := range pm.providers {
@@ -89,10 +90,10 @@ func (pm *PortMappingManager) Stop() {
 }
 
 // CreateMapping 创建端口映射（自动选择最佳提供者）
-func (pm *PortMappingManager) CreateMapping(port int, externalPort int, protocol, description string, addType MappingAddType) (*PortMapping, error) {
+func (pm *PortMappingManager) CreateMapping(port int, externalPort int, protocol, description string, addType types.MappingAddType) (*PortMapping, error) {
 	// 优先尝试UPnP
 	for _, provider := range pm.providers {
-		if provider.Type() == MappingTypeUPnP && provider.IsAvailable() {
+		if provider.Type() == types.MappingTypeUPnP && provider.IsAvailable() {
 			mapping, err := provider.CreateMapping(port, externalPort, protocol, description, addType)
 			if err == nil {
 				pm.logger.WithFields(logrus.Fields{
@@ -112,20 +113,20 @@ func (pm *PortMappingManager) CreateMapping(port int, externalPort int, protocol
 				"protocol": protocol,
 				"type":     provider.Type(),
 				"error":    err,
-			}).Warn("UPnP创建端口映射失败，尝试TURN")
+			}).Warn("UPnP创建端口映射失败，尝试NAT")
 		}
 	}
 
-	// 如果UPnP失败，尝试TURN
+	// 如果UPnP失败，尝试NAT
 	for _, provider := range pm.providers {
-		if provider.Type() == MappingTypeTURN && provider.IsAvailable() {
+		if provider.Type() == types.MappingTypeNAT && provider.IsAvailable() {
 			mapping, err := provider.CreateMapping(port, externalPort, protocol, description, addType)
 			if err == nil {
 				pm.logger.WithFields(logrus.Fields{
 					"port":     port,
 					"protocol": protocol,
 					"type":     provider.Type(),
-				}).Info("使用TURN创建端口映射成功")
+				}).Info("使用NAT创建端口映射成功")
 
 				if pm.onMappingCreated != nil {
 					pm.onMappingCreated(port, mapping.ExternalPort, protocol, provider.Type(), addType)
@@ -138,7 +139,7 @@ func (pm *PortMappingManager) CreateMapping(port int, externalPort int, protocol
 				"protocol": protocol,
 				"type":     provider.Type(),
 				"error":    err,
-			}).Error("TURN创建端口映射失败")
+			}).Error("NAT创建端口映射失败")
 		}
 	}
 
@@ -146,7 +147,7 @@ func (pm *PortMappingManager) CreateMapping(port int, externalPort int, protocol
 }
 
 // RemoveMapping 移除端口映射
-func (pm *PortMappingManager) RemoveMapping(port int, externalPort int, protocol string, addType MappingAddType) error {
+func (pm *PortMappingManager) RemoveMapping(port int, externalPort int, protocol string, addType types.MappingAddType) error {
 	// 尝试从所有提供者中移除
 	var lastError error
 
@@ -207,9 +208,9 @@ func (pm *PortMappingManager) GetStatus() map[string]interface{} {
 
 // SetCallbacks 设置回调函数
 func (pm *PortMappingManager) SetCallbacks(
-	onMappingCreated func(port int, externalPort int, protocol string, providerType MappingType, addType MappingAddType),
-	onMappingRemoved func(port int, externalPort int, protocol string, providerType MappingType, addType MappingAddType),
-	onMappingFailed func(port int, externalPort int, protocol string, providerType MappingType, addType MappingAddType, error error),
+	onMappingCreated func(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType),
+	onMappingRemoved func(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType),
+	onMappingFailed func(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType, error error),
 ) {
 	pm.onMappingCreated = onMappingCreated
 	pm.onMappingRemoved = onMappingRemoved

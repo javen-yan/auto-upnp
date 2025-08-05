@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,17 +26,14 @@ type NAT2Provider struct {
 	// 记录已连接的外部主机
 	connectedHosts map[string]bool
 	hostMutex      sync.RWMutex
-
-	// 公网IP信息
-	publicIP      string
-	publicIPMutex sync.RWMutex
+	natInfo        *types.NATInfo
 }
 
 // NewNAT2Provider 创建新的NAT2提供者
 func NewNAT2Provider(logger *logrus.Logger, config map[string]interface{}) *NAT2Provider {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &NAT2Provider{
+	p := &NAT2Provider{
 		logger:         logger,
 		ctx:            ctx,
 		cancel:         cancel,
@@ -47,6 +42,12 @@ func NewNAT2Provider(logger *logrus.Logger, config map[string]interface{}) *NAT2
 		config:         config,
 		connectedHosts: make(map[string]bool),
 	}
+
+	if natInfo, ok := config["nat_info"].(*types.NATInfo); ok {
+		p.natInfo = natInfo
+	}
+
+	return p
 }
 
 // Type 返回NAT类型
@@ -56,7 +57,7 @@ func (n *NAT2Provider) Type() types.NATType {
 
 // Name 返回提供者名称
 func (n *NAT2Provider) Name() string {
-	return "NAT2提供者（受限锥形NAT）"
+	return "NAT2Provider"
 }
 
 // IsAvailable 检查是否可用
@@ -71,9 +72,6 @@ func (n *NAT2Provider) Start() error {
 	// 对于受限锥形NAT，我们需要先与外部主机建立连接
 	// 然后外部主机才能连接到我们
 	n.available = true
-
-	// 检测公网IP
-	go n.detectPublicIP()
 
 	// 启动连接收集协程
 	go n.collectAvailableConnections()
@@ -93,8 +91,8 @@ func (n *NAT2Provider) Stop() error {
 	defer n.mutex.Unlock()
 
 	for _, hole := range n.holes {
-		if hole.Status == HoleStatusActive {
-			hole.Status = HoleStatusInactive
+		if hole.Status == types.MappingStatusActive {
+			hole.Status = types.MappingStatusInactive
 		}
 	}
 
@@ -115,7 +113,7 @@ func (n *NAT2Provider) CreateHole(localPort int, externalPort int, protocol stri
 
 	// 检查是否已存在
 	if existing, exists := n.holes[key]; exists {
-		if existing.Status == HoleStatusActive {
+		if existing.Status == types.MappingStatusActive {
 			return existing, nil
 		}
 	}
@@ -127,47 +125,86 @@ func (n *NAT2Provider) CreateHole(localPort int, externalPort int, protocol stri
 		Protocol:     protocol,
 		Description:  description,
 		Type:         types.NATType2,
-		Status:       HoleStatusActive,
+		Status:       types.MappingStatusActive,
 		CreatedAt:    time.Now(),
 		LastActivity: time.Now(),
 	}
 
 	// 对于受限锥形NAT，我们需要：
-	// 1. 监听外部端口（远端端口）
-	// 2. 维护已连接的外部主机列表
-	// 3. 只允许已建立连接的外部主机访问
+	// 1. 优先尝试使用目标端口（externalPort）
+	// 2. 如果目标端口被占用，则使用随机端口
+	// 3. 维护已连接的外部主机列表
+	// 4. 只允许已建立连接的外部主机访问
 	var listener net.Listener
 	var packetConn net.PacketConn
 	var err error
 
+	// 首先尝试使用目标端口
+	listenPort := externalPort
+	useRandomPort := false
+
 	// 根据协议类型选择不同的监听方式
 	switch protocol {
 	case "tcp":
-		// TCP协议使用Listener - 监听所有接口
-		listener, err = net.Listen(protocol, fmt.Sprintf("0.0.0.0:%d", externalPort))
+		// 首先尝试使用目标端口
+		listener, err = net.Listen(protocol, fmt.Sprintf("0.0.0.0:%d", listenPort))
 		if err != nil {
-			hole.Status = HoleStatusFailed
-			hole.Error = fmt.Sprintf("无法监听外部端口 %d: %v", externalPort, err)
-			n.holes[key] = hole
-			return hole, fmt.Errorf("无法监听外部端口 %d: %w", externalPort, err)
+			// 如果目标端口被占用，尝试使用随机端口
+			n.logger.WithFields(logrus.Fields{
+				"target_port": externalPort,
+				"error":       err,
+			}).Warn("目标端口被占用，尝试使用随机端口")
+
+			listenPort = 0 // 使用随机端口
+			listener, err = net.Listen(protocol, fmt.Sprintf("0.0.0.0:%d", listenPort))
+			useRandomPort = true
 		}
+
+		if err != nil {
+			hole.Status = types.MappingStatusFailed
+			hole.Error = fmt.Sprintf("无法监听TCP端口: %v", err)
+			n.holes[key] = hole
+			return hole, fmt.Errorf("无法监听TCP端口: %w", err)
+		}
+
+		// 获取实际监听的端口
+		actualPort := listener.Addr().(*net.TCPAddr).Port
+		hole.ExternalPort = actualPort      // 更新为实际监听的端口
+		hole.ExternalAddr = listener.Addr() // 设置外部地址
 
 		// 启动TCP监听协程
 		go n.handleTCPConnections(listener, hole)
 	case "udp":
-		// UDP协议使用PacketConn - 监听所有接口
-		packetConn, err = net.ListenPacket(protocol, fmt.Sprintf("0.0.0.0:%d", externalPort))
+		// 首先尝试使用目标端口
+		packetConn, err = net.ListenPacket(protocol, fmt.Sprintf("0.0.0.0:%d", listenPort))
 		if err != nil {
-			hole.Status = HoleStatusFailed
-			hole.Error = fmt.Sprintf("无法监听外部UDP端口 %d: %v", externalPort, err)
-			n.holes[key] = hole
-			return hole, fmt.Errorf("无法监听外部UDP端口 %d: %w", externalPort, err)
+			// 如果目标端口被占用，尝试使用随机端口
+			n.logger.WithFields(logrus.Fields{
+				"target_port": externalPort,
+				"error":       err,
+			}).Warn("目标端口被占用，尝试使用随机端口")
+
+			listenPort = 0 // 使用随机端口
+			packetConn, err = net.ListenPacket(protocol, fmt.Sprintf("0.0.0.0:%d", listenPort))
+			useRandomPort = true
 		}
+
+		if err != nil {
+			hole.Status = types.MappingStatusFailed
+			hole.Error = fmt.Sprintf("无法监听UDP端口: %v", err)
+			n.holes[key] = hole
+			return hole, fmt.Errorf("无法监听UDP端口: %w", err)
+		}
+
+		// 获取实际监听的端口
+		actualPort := packetConn.LocalAddr().(*net.UDPAddr).Port
+		hole.ExternalPort = actualPort             // 更新为实际监听的端口
+		hole.ExternalAddr = packetConn.LocalAddr() // 设置外部地址
 
 		// 启动UDP监听协程
 		go n.handleUDPConnections(packetConn, hole)
 	default:
-		hole.Status = HoleStatusFailed
+		hole.Status = types.MappingStatusFailed
 		hole.Error = fmt.Sprintf("不支持的协议: %s", protocol)
 		n.holes[key] = hole
 		return hole, fmt.Errorf("不支持的协议: %s", protocol)
@@ -178,11 +215,17 @@ func (n *NAT2Provider) CreateHole(localPort int, externalPort int, protocol stri
 
 	n.holes[key] = hole
 
+	portType := "目标端口"
+	if useRandomPort {
+		portType = "随机端口"
+	}
+
 	n.logger.WithFields(logrus.Fields{
 		"local_port":    localPort,
-		"external_port": externalPort,
+		"external_port": hole.ExternalPort, // 使用实际监听的端口
 		"protocol":      protocol,
 		"type":          "NAT2",
+		"port_type":     portType,
 	}).Info("创建NAT2穿透成功")
 
 	return hole, nil
@@ -196,7 +239,7 @@ func (n *NAT2Provider) RemoveHole(localPort int, externalPort int, protocol stri
 	defer n.mutex.Unlock()
 
 	if hole, exists := n.holes[key]; exists {
-		hole.Status = HoleStatusInactive
+		hole.Status = types.MappingStatusInactive
 		hole.LastActivity = time.Now()
 
 		n.logger.WithFields(logrus.Fields{
@@ -235,11 +278,11 @@ func (n *NAT2Provider) GetStatus() map[string]interface{} {
 
 	for _, hole := range n.holes {
 		switch hole.Status {
-		case HoleStatusActive:
+		case types.MappingStatusActive:
 			activeCount++
-		case HoleStatusInactive:
+		case types.MappingStatusInactive:
 			inactiveCount++
-		case HoleStatusFailed:
+		case types.MappingStatusFailed:
 			failedCount++
 		}
 	}
@@ -248,10 +291,6 @@ func (n *NAT2Provider) GetStatus() map[string]interface{} {
 	connectedHostsCount := len(n.connectedHosts)
 	n.hostMutex.RUnlock()
 
-	n.publicIPMutex.RLock()
-	publicIP := n.publicIP
-	n.publicIPMutex.RUnlock()
-
 	return map[string]interface{}{
 		"available":       n.available,
 		"total_holes":     len(n.holes),
@@ -259,7 +298,7 @@ func (n *NAT2Provider) GetStatus() map[string]interface{} {
 		"inactive_holes":  inactiveCount,
 		"failed_holes":    failedCount,
 		"connected_hosts": connectedHostsCount,
-		"public_ip":       publicIP,
+		"nat_info":        n.natInfo,
 	}
 }
 
@@ -451,131 +490,6 @@ func (n *NAT2Provider) scanForConnections() {
 			}
 		}
 	}
-}
-
-// detectPublicIP 检测公网IP
-func (n *NAT2Provider) detectPublicIP() {
-	// 使用多个服务检测公网IP
-	services := []string{
-		"http://ipinfo.io/ip",
-		"http://icanhazip.com",
-		"http://ifconfig.me",
-		"http://ipecho.net/plain",
-	}
-
-	for _, service := range services {
-		ip, err := n.getPublicIPFromService(service)
-		if err == nil && ip != "" {
-			n.publicIPMutex.Lock()
-			n.publicIP = ip
-			n.publicIPMutex.Unlock()
-
-			n.logger.WithFields(logrus.Fields{
-				"public_ip": ip,
-				"service":   service,
-			}).Info("检测到公网IP")
-
-			// 将公网IP添加到已连接主机列表
-			n.hostMutex.Lock()
-			n.connectedHosts[ip] = true
-			n.hostMutex.Unlock()
-
-			return
-		}
-	}
-
-	n.logger.Warn("无法检测到公网IP")
-}
-
-// getPublicIPFromService 从指定服务获取公网IP
-func (n *NAT2Provider) getPublicIPFromService(service string) (string, error) {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := client.Get(service)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	ip := strings.TrimSpace(string(body))
-	if net.ParseIP(ip) != nil {
-		return ip, nil
-	}
-
-	return "", fmt.Errorf("无效的IP地址: %s", ip)
-}
-
-// GetPublicIP 获取公网IP
-func (n *NAT2Provider) GetPublicIP() string {
-	n.publicIPMutex.RLock()
-	defer n.publicIPMutex.RUnlock()
-	return n.publicIP
-}
-
-// CheckPortAccessibility 检查端口是否可以从公网访问
-func (n *NAT2Provider) CheckPortAccessibility(port int, protocol string) bool {
-	// 尝试监听端口
-	var listener net.Listener
-	var packetConn net.PacketConn
-	var err error
-
-	switch protocol {
-	case "tcp":
-		listener, err = net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
-		if err != nil {
-			n.logger.WithFields(logrus.Fields{
-				"port":     port,
-				"protocol": protocol,
-				"error":    err.Error(),
-			}).Warn("端口无法监听")
-			return false
-		}
-		listener.Close()
-	case "udp":
-		packetConn, err = net.ListenPacket("udp", fmt.Sprintf("0.0.0.0:%d", port))
-		if err != nil {
-			n.logger.WithFields(logrus.Fields{
-				"port":     port,
-				"protocol": protocol,
-				"error":    err.Error(),
-			}).Warn("端口无法监听")
-			return false
-		}
-		packetConn.Close()
-	}
-
-	n.logger.WithFields(logrus.Fields{
-		"port":     port,
-		"protocol": protocol,
-	}).Info("端口可以监听")
-
-	return true
-}
-
-// GetAccessiblePorts 获取可访问的端口列表
-func (n *NAT2Provider) GetAccessiblePorts() map[string][]int {
-	accessiblePorts := make(map[string][]int)
-
-	// 测试常用端口
-	ports := []int{80, 443, 8080, 8443, 22, 21, 25, 53, 3389, 5900}
-
-	for _, port := range ports {
-		if n.CheckPortAccessibility(port, "tcp") {
-			accessiblePorts["tcp"] = append(accessiblePorts["tcp"], port)
-		}
-		if n.CheckPortAccessibility(port, "udp") {
-			accessiblePorts["udp"] = append(accessiblePorts["udp"], port)
-		}
-	}
-
-	return accessiblePorts
 }
 
 // handleTCPConnection 处理单个TCP连接

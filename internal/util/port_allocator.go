@@ -1,10 +1,8 @@
-package nat_traversal
+package util
 
 import (
 	"fmt"
 	"sync"
-
-	"auto-upnp/internal/util"
 )
 
 // PortAllocator 端口分配器
@@ -30,7 +28,7 @@ func (pa *PortAllocator) AllocatePort() (int, error) {
 	defer pa.mutex.Unlock()
 
 	for port := pa.startPort; port <= pa.endPort; port++ {
-		status := util.IsPortActive(port)
+		status := IsPortActive(port)
 		if !status.Open {
 			pa.allocatedPorts[port] = true
 			return port, nil

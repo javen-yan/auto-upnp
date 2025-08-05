@@ -9,6 +9,7 @@ import (
 	"auto-upnp/config"
 	"auto-upnp/internal/portmapping"
 	"auto-upnp/internal/portmonitor"
+	"auto-upnp/internal/types"
 	"auto-upnp/internal/util"
 
 	"github.com/sirupsen/logrus"
@@ -64,25 +65,14 @@ func (as *AutoUPnPService) Start() error {
 	upnpProvider := portmapping.NewUPnPProvider(as.logger, upnpConfig)
 	as.portMappingManager.AddProvider(upnpProvider)
 
-	// 如果启用NAT穿透，创建并添加TURN提供者
+	// 如果启用NAT穿透，创建并添加NAT
 	if as.config.NATTraversal.Enabled {
-		// 转换配置类型
-		turnServers := make([]map[string]interface{}, 0, len(as.config.NATTraversal.TURNServers))
-		for _, server := range as.config.NATTraversal.TURNServers {
-			turnServers = append(turnServers, map[string]interface{}{
-				"host":     server.Host,
-				"port":     server.Port,
-				"username": server.Username,
-				"password": server.Password,
-				"realm":    server.Realm,
-			})
+		natConfig := map[string]interface{}{
+			"stun_servers":   as.config.NATTraversal.STUNServers,
+			"system_natinfo": SystemServiceInstance.NatInfo,
 		}
-
-		turnConfig := map[string]interface{}{
-			"turn_servers": turnServers,
-		}
-		turnProvider := portmapping.NewTURNProvider(as.logger, turnConfig)
-		as.portMappingManager.AddProvider(turnProvider)
+		natProvider := portmapping.NewNATProvider(as.logger, natConfig)
+		as.portMappingManager.AddProvider(natProvider)
 	}
 
 	// 设置端口映射管理器的回调
@@ -159,12 +149,18 @@ func (as *AutoUPnPService) Stop() {
 
 // onAutoPortStatusChanged 自动端口状态变化回调
 func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool, protocol util.ProtocolType) {
+	// 添加空指针检查
+	if as.portMappingManager == nil {
+		as.logger.WithField("port", port).Warn("端口映射管理器未初始化，跳过端口状态处理")
+		return
+	}
+
 	if isActive {
 		// 端口变为活跃状态，创建自动映射
 		as.logger.WithField("port", port).Info("检测到自动端口上线，创建端口映射")
 
 		description := fmt.Sprintf("AutoUPnP-%d", port)
-		_, err := as.portMappingManager.CreateMapping(port, port, string(protocol), description, portmapping.MappingAddTypeAuto)
+		_, err := as.portMappingManager.CreateMapping(port, port, string(protocol), description, types.MappingAddTypeAuto)
 		if err != nil {
 			as.logger.WithFields(logrus.Fields{
 				"port":  port,
@@ -178,7 +174,7 @@ func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool, prot
 		// 端口变为非活跃状态，删除自动映射
 		as.logger.WithField("port", port).Info("检测到自动端口下线，删除映射")
 
-		if err := as.portMappingManager.RemoveMapping(port, port, string(protocol), portmapping.MappingAddTypeAuto); err != nil {
+		if err := as.portMappingManager.RemoveMapping(port, port, string(protocol), types.MappingAddTypeAuto); err != nil {
 			as.logger.WithFields(logrus.Fields{
 				"port":  port,
 				"error": err,
@@ -190,7 +186,7 @@ func (as *AutoUPnPService) onAutoPortStatusChanged(port int, isActive bool, prot
 }
 
 // onMappingCreated 映射创建回调
-func (as *AutoUPnPService) onMappingCreated(port int, externalPort int, protocol string, providerType portmapping.MappingType, addType portmapping.MappingAddType) {
+func (as *AutoUPnPService) onMappingCreated(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType) {
 	as.logger.WithFields(logrus.Fields{
 		"port":          port,
 		"external_port": externalPort,
@@ -198,18 +194,22 @@ func (as *AutoUPnPService) onMappingCreated(port int, externalPort int, protocol
 		"provider":      providerType,
 	}).Info("端口映射创建成功")
 
-	if addType == portmapping.MappingAddTypeManual {
+	if addType == types.MappingAddTypeManual {
 		// 异步保存到存储服务，避免阻塞主流程
 		go func() {
-			if err := as.storeService.Add(port, externalPort, protocol, fmt.Sprintf("Manual-%d", port)); err != nil {
-				as.logger.WithError(err).Error("保存手动映射到存储服务失败")
+			if as.storeService != nil {
+				if err := as.storeService.Add(port, externalPort, protocol, fmt.Sprintf("Manual-%d", port)); err != nil {
+					as.logger.WithError(err).Error("保存手动映射到存储服务失败")
+				}
+			} else {
+				as.logger.Warn("存储服务未初始化，跳过保存操作")
 			}
 		}()
 	}
 }
 
 // onMappingRemoved 映射删除回调
-func (as *AutoUPnPService) onMappingRemoved(port int, externalPort int, protocol string, providerType portmapping.MappingType, addType portmapping.MappingAddType) {
+func (as *AutoUPnPService) onMappingRemoved(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType) {
 	as.logger.WithFields(logrus.Fields{
 		"port":          port,
 		"external_port": externalPort,
@@ -217,18 +217,22 @@ func (as *AutoUPnPService) onMappingRemoved(port int, externalPort int, protocol
 		"provider":      providerType,
 	}).Info("端口映射删除成功")
 
-	if addType == portmapping.MappingAddTypeManual {
+	if addType == types.MappingAddTypeManual {
 		// 异步从存储服务删除，避免阻塞主流程
 		go func() {
-			if err := as.storeService.Remove(port, externalPort, protocol); err != nil {
-				as.logger.WithError(err).Error("从存储服务删除手动映射失败")
+			if as.storeService != nil {
+				if err := as.storeService.Remove(port, externalPort, protocol); err != nil {
+					as.logger.WithError(err).Error("从存储服务删除手动映射失败")
+				}
+			} else {
+				as.logger.Warn("存储服务未初始化，跳过删除操作")
 			}
 		}()
 	}
 }
 
 // onMappingFailed 映射失败回调
-func (as *AutoUPnPService) onMappingFailed(port int, externalPort int, protocol string, providerType portmapping.MappingType, addType portmapping.MappingAddType, err error) {
+func (as *AutoUPnPService) onMappingFailed(port int, externalPort int, protocol string, providerType types.MappingType, addType types.MappingAddType, err error) {
 	as.logger.WithFields(logrus.Fields{
 		"port":          port,
 		"external_port": externalPort,
@@ -237,11 +241,15 @@ func (as *AutoUPnPService) onMappingFailed(port int, externalPort int, protocol 
 		"error":         err,
 	}).Error("端口映射操作失败")
 
-	if addType == portmapping.MappingAddTypeManual {
+	if addType == types.MappingAddTypeManual {
 		// 异步从存储服务删除，避免阻塞主流程
 		go func() {
-			if err := as.storeService.Remove(port, externalPort, protocol); err != nil {
-				as.logger.WithError(err).Error("从存储服务删除失败映射失败")
+			if as.storeService != nil {
+				if err := as.storeService.Remove(port, externalPort, protocol); err != nil {
+					as.logger.WithError(err).Error("从存储服务删除失败映射失败")
+				}
+			} else {
+				as.logger.Warn("存储服务未初始化，跳过删除操作")
 			}
 		}()
 	}
@@ -268,17 +276,28 @@ func (as *AutoUPnPService) cleanupRoutine() {
 func (as *AutoUPnPService) cleanupExpiredMappings() {
 	as.logger.Debug("开始清理过期的端口映射")
 
+	// 添加空指针检查
+	if as.portMappingManager == nil {
+		as.logger.Warn("端口映射管理器未初始化，跳过清理操作")
+		return
+	}
+
+	if as.autoPortMonitor == nil {
+		as.logger.Warn("端口监控器未初始化，跳过清理操作")
+		return
+	}
+
 	// 从portMappingManager获取所有自动映射
 	allMappings := as.portMappingManager.GetMappings()
 
 	for _, mapping := range allMappings {
-		if mapping.AddType == portmapping.MappingAddTypeAuto {
+		if mapping.AddType == types.MappingAddTypeAuto {
 			// 检查端口是否仍然活跃
 			status, exists := as.autoPortMonitor.GetPortStatus(mapping.InternalPort)
 			if !exists || !status.IsActive {
 				as.logger.WithField("port", mapping.InternalPort).Info("清理非活跃的自动端口映射")
 				// 删除映射
-				as.portMappingManager.RemoveMapping(mapping.InternalPort, mapping.ExternalPort, mapping.Protocol, portmapping.MappingAddTypeAuto)
+				as.portMappingManager.RemoveMapping(mapping.InternalPort, mapping.ExternalPort, mapping.Protocol, types.MappingAddTypeAuto)
 			}
 		}
 	}
@@ -298,13 +317,13 @@ func (as *AutoUPnPService) GetStatus() map[string]interface{} {
 	portMappings := as.portMappingManager.GetMappings()
 	activeAutoMappings := []int{}
 	for _, mapping := range portMappings {
-		if mapping.AddType == portmapping.MappingAddTypeAuto {
+		if mapping.AddType == types.MappingAddTypeAuto {
 			activeAutoMappings = append(activeAutoMappings, mapping.InternalPort)
 		}
 	}
 	manualMappings := make([]*portmapping.PortMapping, 0)
 	for _, mapping := range portMappings {
-		if mapping.AddType == portmapping.MappingAddTypeManual {
+		if mapping.AddType == types.MappingAddTypeManual {
 			manualMappings = append(manualMappings, mapping)
 		}
 	}
@@ -331,7 +350,7 @@ func (as *AutoUPnPService) AddManualMapping(internalPort, externalPort int, prot
 	}
 
 	// 直接创建端口映射，不依赖端口监控
-	_, err := as.portMappingManager.CreateMapping(internalPort, externalPort, protocol, description, portmapping.MappingAddTypeManual)
+	_, err := as.portMappingManager.CreateMapping(internalPort, externalPort, protocol, description, types.MappingAddTypeManual)
 	if err != nil {
 		as.logger.WithError(err).Error("创建手动端口映射失败")
 		return err
@@ -349,7 +368,7 @@ func (as *AutoUPnPService) AddManualMapping(internalPort, externalPort int, prot
 // RemoveManualMapping 手动删除端口映射
 func (as *AutoUPnPService) RemoveManualMapping(internalPort, externalPort int, protocol string) error {
 	// 从端口映射管理器中删除（如果存在）
-	if err := as.portMappingManager.RemoveMapping(internalPort, externalPort, protocol, portmapping.MappingAddTypeManual); err != nil {
+	if err := as.portMappingManager.RemoveMapping(internalPort, externalPort, protocol, types.MappingAddTypeManual); err != nil {
 		as.logger.WithError(err).Warn("删除端口映射失败")
 	}
 
@@ -378,7 +397,7 @@ func (as *AutoUPnPService) GetPortMappings(addType string) []portmapping.PortMap
 	case "auto":
 		autoMappings := []portmapping.PortMapping{}
 		for _, mapping := range allMappings {
-			if mapping.AddType == portmapping.MappingAddTypeAuto {
+			if mapping.AddType == types.MappingAddTypeAuto {
 				autoMappings = append(autoMappings, *mapping)
 			}
 		}
@@ -386,7 +405,7 @@ func (as *AutoUPnPService) GetPortMappings(addType string) []portmapping.PortMap
 	case "manual":
 		manualMappings := []portmapping.PortMapping{}
 		for _, mapping := range allMappings {
-			if mapping.AddType == portmapping.MappingAddTypeManual {
+			if mapping.AddType == types.MappingAddTypeManual {
 				manualMappings = append(manualMappings, *mapping)
 			}
 		}

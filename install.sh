@@ -217,6 +217,16 @@ log:
   max_size: 10485760  # 10MB
   backup_count: 5
 
+# NAT穿透配置
+nat_traversal:
+  enabled: false
+  stun_servers:
+    - stun.ealine.cn:3478
+    - stun.miwifi.com:3478
+    - stun.chat.bilibili.com:3478
+    - stun.hitv.com:3478
+    - stun.cdnbye.com:3478
+
 # 监控配置
 monitor:
   check_interval: 10s       # 端口状态检查间隔

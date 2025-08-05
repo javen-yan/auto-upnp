@@ -14,7 +14,7 @@ func NATSnifferTry() {
 	fmt.Println(strings.Repeat("=", 50))
 
 	// 创建NAT嗅探器
-	sniffer := NewNATSniffer()
+	sniffer := NewNATSniffer(nil)
 	defer sniffer.Close()
 
 	// 1. 基本NAT检测
