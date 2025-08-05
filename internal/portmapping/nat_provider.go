@@ -115,12 +115,6 @@ func (tp *NATProvider) CreateMapping(port int, externalPort int, protocol, descr
 		return nil, fmt.Errorf("NAT提供者不可用")
 	}
 
-	// 使用分配的外部端口创建映射键
-	mappingKey := fmt.Sprintf("%d:%d:%s", port, externalPort, protocol)
-
-	tp.mutex.Lock()
-	defer tp.mutex.Unlock()
-
 	// 为这个端口创建独立的NAT打洞
 	natHole, err := tp.createNATHole(port, protocol)
 	if err != nil {
@@ -146,6 +140,12 @@ func (tp *NATProvider) CreateMapping(port int, externalPort int, protocol, descr
 		LastActivity: time.Now(),
 		ExternalAddr: natHole.ExternalAddr, // 使用独立的外部地址
 	}
+
+	// 使用分配的外部端口创建映射键
+	mappingKey := fmt.Sprintf("%d:%d:%s", port, natHole.ExternalPort, protocol)
+
+	tp.mutex.Lock()
+	defer tp.mutex.Unlock()
 
 	tp.mappings[mappingKey] = mapping
 

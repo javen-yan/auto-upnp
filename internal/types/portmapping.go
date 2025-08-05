@@ -5,7 +5,6 @@ type MappingType string
 
 const (
 	MappingTypeUPnP MappingType = "upnp"
-	MappingTypeTURN MappingType = "turn"
 	MappingTypeNAT  MappingType = "nat"
 )
 
