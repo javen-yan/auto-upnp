@@ -24,6 +24,7 @@ type NATProvider struct {
 	natInfo         *types.NATInfo
 	natHolePunching *nathole.NATHolePunching
 	stunServers     []string
+	nat2Mode        int
 }
 
 // NewNATProvider 创建新的NAT提供者
@@ -46,6 +47,12 @@ func NewNATProvider(logger *logrus.Logger, config map[string]interface{}) *NATPr
 	// 从配置中读取系统NAT信息
 	if systemNatInfo, ok := config["system_natinfo"].(*types.NATInfo); ok {
 		provider.natInfo = systemNatInfo
+	}
+
+	if nat2Mode, ok := config["nat2_mode"].(int); ok {
+		provider.nat2Mode = nat2Mode
+	} else {
+		provider.nat2Mode = 1
 	}
 
 	provider.logger.WithFields(logrus.Fields{
@@ -79,6 +86,7 @@ func (tp *NATProvider) Start(checkStatusTaskTime time.Duration) error {
 	config := make(map[string]interface{})
 	config["stun_servers"] = tp.stunServers
 	config["nat_info"] = tp.natInfo
+	config["nat2_mode"] = tp.nat2Mode
 	tp.natHolePunching = nathole.NewNATHolePunching(tp.logger, tp.natInfo, config)
 
 	// 启动NAT穿透服务

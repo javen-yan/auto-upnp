@@ -8,6 +8,7 @@ port_range:
 
 # UPnP配置
 upnp:
+  enabled: true            # 是否启用UPnP功能
   discovery_timeout: 10s    # 设备发现超时时间
   mapping_duration: 1h      # 端口映射持续时间，0表示永久
   retry_attempts: 3         # 重试次数
@@ -19,17 +20,12 @@ upnp:
 # NAT穿透配置
 nat_traversal:
   enabled: true            # 是否启用NAT穿透功能
+  nat2_mode: 1             # NAT2模式：0=严格模式，1=宽松模式，2=学习模式
   stun_servers:
-    - stun.ealine.cn:3478
     - stun.miwifi.com:3478
     - stun.chat.bilibili.com:3478
     - stun.hitv.com:3478
     - stun.cdnbye.com:3478
-
-# 网络接口配置
-network:
-  preferred_interfaces: ["eth0", "wlan0"]  # 优先使用的网络接口
-  exclude_interfaces: ["lo", "docker"]     # 排除的网络接口
 
 # 日志配置
 log:

@@ -22,10 +22,18 @@ type NAT2Provider struct {
 	available bool
 	config    map[string]interface{}
 
-	// 记录已连接的外部主机
-	connectedHosts map[string]bool
-	hostMutex      sync.RWMutex
+	connectedHosts map[string]bool // 共享的已连接主机记录
+	hostMutex      sync.RWMutex    // 共享的已连接主机记录的互斥锁
 	natInfo        *types.NATInfo
+	stunServers    []string
+	nat2Mode       int
+}
+
+var defaultStunServers = []string{
+	"stun.miwifi.com:3478",
+	"stun.chat.bilibili.com:3478",
+	"stun.hitv.com:3478",
+	"stun.cdnbye.com:3478",
 }
 
 // NewNAT2Provider 创建新的NAT2提供者
@@ -44,6 +52,18 @@ func NewNAT2Provider(logger *logrus.Logger, config map[string]interface{}) *NAT2
 
 	if natInfo, ok := config["nat_info"].(*types.NATInfo); ok {
 		p.natInfo = natInfo
+	}
+
+	if stunServers, ok := config["stun_servers"].([]string); ok {
+		p.stunServers = stunServers
+	} else {
+		p.stunServers = defaultStunServers
+	}
+
+	if nat2Mode, ok := config["nat2_mode"].(int); ok {
+		p.nat2Mode = nat2Mode
+	} else {
+		p.nat2Mode = 1
 	}
 
 	return p
@@ -191,8 +211,8 @@ func (n *NAT2Provider) GetStatus() map[string]interface{} {
 
 // handleTCPConnections 处理TCP连接
 func (n *NAT2Provider) handleTCPConnections(listener net.Listener, hole *NATHole) {
-	// 使用NAT2专用的TCP代理
-	handler := NewNAT2ProxyHandler(n.logger, n.ctx)
+	// 使用NAT2专用的TCP代理，共享已连接主机记录
+	handler := NewNAT2ProxyHandlerWithSharedHosts(n.logger, n.ctx, n.connectedHosts, &n.hostMutex, n.nat2Mode)
 	proxy := NewTCPProxy(handler)
 	proxy.HandleConnections(listener, hole)
 }
@@ -213,12 +233,7 @@ func (n *NAT2Provider) establishExternalConnection(hole *NATHole) {
 // autoNegotiation 自动协商过程
 func (n *NAT2Provider) autoNegotiation(hole *NATHole) {
 	// 尝试连接到多个外部服务器以建立映射
-	servers := []string{
-		"stun.miwifi.com:3478",
-		"stun.chat.bilibili.com:3478",
-		"stun.hitv.com:3478",
-		"stun.cdnbye.com:3478",
-	}
+	servers := n.stunServers
 
 	for _, server := range servers {
 		select {
@@ -269,17 +284,18 @@ func (n *NAT2Provider) tryConnectToServer(hole *NATHole, server string) bool {
 	}
 	defer conn.Close()
 
-	// 获取本地地址
-	localAddr := conn.LocalAddr()
-	if tcpAddr, ok := localAddr.(*net.TCPAddr); ok {
-		// 记录连接的主机（允许该主机访问）
+	// 获取远程地址（STUN服务器的IP）
+	remoteAddr := conn.RemoteAddr()
+	if tcpAddr, ok := remoteAddr.(*net.TCPAddr); ok {
+		// 记录我们连接到的外部服务器IP（允许该IP访问我们）
 		n.hostMutex.Lock()
 		n.connectedHosts[tcpAddr.IP.String()] = true
 		n.hostMutex.Unlock()
 
 		n.logger.WithFields(logrus.Fields{
 			"server":        server,
-			"local_addr":    localAddr,
+			"remote_addr":   remoteAddr,
+			"local_addr":    conn.LocalAddr(),
 			"local_port":    hole.LocalPort,
 			"external_port": hole.ExternalPort,
 			"protocol":      hole.Protocol,
@@ -293,7 +309,11 @@ func (n *NAT2Provider) tryConnectToServer(hole *NATHole, server string) bool {
 
 // collectAvailableConnections 收集可用的连接
 func (n *NAT2Provider) collectAvailableConnections() {
-	ticker := time.NewTicker(30 * time.Second) // 每30秒收集一次
+	// 启动时立即执行一次
+	n.scanForConnections()
+
+	// 然后每5分钟收集一次，避免过于频繁的外部连接
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -308,34 +328,94 @@ func (n *NAT2Provider) collectAvailableConnections() {
 
 // scanForConnections 扫描可用连接
 func (n *NAT2Provider) scanForConnections() {
-	// 扫描常见的端口和服务
-	ports := []int{80, 443, 8080, 8443, 22, 21, 25, 53}
+	// 对于NAT2（受限锥形NAT），我们需要主动与外部服务器建立连接
+	// 来创建NAT映射，这样外部主机才能连接到我们
 
-	for _, port := range ports {
+	// 使用更多的STUN服务器来建立连接
+	servers := n.stunServers
+
+	// 同时尝试TCP和UDP连接
+	protocols := []string{"tcp", "udp"}
+
+	for _, server := range servers {
 		select {
 		case <-n.ctx.Done():
 			return
 		default:
-			// 尝试连接到本地端口以建立映射
-			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 1*time.Second)
-			if err == nil {
-				conn.Close()
+			for _, protocol := range protocols {
+				if n.tryConnectToExternalServer(server, protocol) {
+					n.logger.WithFields(logrus.Fields{
+						"server":   server,
+						"protocol": protocol,
+					}).Debug("成功建立外部连接")
+				}
+			}
+		}
+	}
 
-				// 记录本地连接
-				n.hostMutex.Lock()
-				n.connectedHosts["127.0.0.1"] = true
-				n.hostMutex.Unlock()
+	// 尝试连接到一些常用的外部服务来建立映射
+	externalServices := []string{
+		"8.8.8.8:53",        // Google DNS
+		"1.1.1.1:53",        // Cloudflare DNS
+		"208.67.222.222:53", // OpenDNS
+	}
 
-				n.logger.WithField("port", port).Debug("发现本地可用连接")
+	for _, service := range externalServices {
+		select {
+		case <-n.ctx.Done():
+			return
+		default:
+			if n.tryConnectToExternalServer(service, "udp") {
+				n.logger.WithField("service", service).Debug("成功建立外部服务连接")
 			}
 		}
 	}
 }
 
+// tryConnectToExternalServer 尝试连接到外部服务器
+func (n *NAT2Provider) tryConnectToExternalServer(server, protocol string) bool {
+	var conn net.Conn
+	var err error
+
+	switch protocol {
+	case "tcp":
+		conn, err = net.DialTimeout("tcp", server, 3*time.Second)
+	case "udp":
+		conn, err = net.DialTimeout("udp", server, 3*time.Second)
+	default:
+		return false
+	}
+
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	// 获取远程地址（外部服务器的IP）
+	remoteAddr := conn.RemoteAddr()
+	if tcpAddr, ok := remoteAddr.(*net.TCPAddr); ok {
+		// 记录我们连接到的外部服务器IP（允许该IP访问我们）
+		n.hostMutex.Lock()
+		n.connectedHosts[tcpAddr.IP.String()] = true
+		n.hostMutex.Unlock()
+
+		return true
+	} else if udpAddr, ok := remoteAddr.(*net.UDPAddr); ok {
+		// 记录我们连接到的外部服务器IP（允许该IP访问我们）
+		n.hostMutex.Lock()
+		n.connectedHosts[udpAddr.IP.String()] = true
+		n.hostMutex.Unlock()
+
+		return true
+	}
+
+	return false
+}
+
 // handleUDPConnections 处理UDP连接
 func (n *NAT2Provider) handleUDPConnections(packetConn net.PacketConn, hole *NATHole) {
-	// 使用NAT2专用的UDP代理
-	handler := NewNAT2ProxyHandler(n.logger, n.ctx)
+	// 使用NAT2专用的UDP代理，共享已连接主机记录
+	handler := NewNAT2ProxyHandlerWithSharedHosts(n.logger, n.ctx, n.connectedHosts, &n.hostMutex, n.nat2Mode)
 	proxy := NewUDPProxy(handler)
 	proxy.HandleConnections(packetConn, hole)
 }

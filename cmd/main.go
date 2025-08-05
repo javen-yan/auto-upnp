@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"auto-upnp/config"
 	"auto-upnp/internal/admin"
@@ -90,50 +88,16 @@ func runMain(cmd *cobra.Command, args []string) error {
 		return natSnifferCmd.RunE(cmd, args)
 	}
 
-	// 设置日志级别
-	level, err := logrus.ParseLevel(logLevel)
-	if err != nil {
-		return fmt.Errorf("无效的日志级别: %s", logLevel)
-	}
-
-	// 配置日志
-	logger := logrus.New()
-	logger.SetLevel(level)
-
-	// 使用结构化日志格式
-	if logLevel == "debug" {
-		logger.SetFormatter(&logrus.TextFormatter{
-			FullTimestamp: true,
-			ForceColors:   true,
-		})
-	} else {
-		logger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: time.RFC3339,
-			FieldMap: logrus.FieldMap{
-				logrus.FieldKeyTime:  "timestamp",
-				logrus.FieldKeyLevel: "level",
-				logrus.FieldKeyMsg:   "message",
-			},
-		})
-	}
-
 	// 加载配置文件
 	cfg, err := config.LoadConfig(configFile)
 	if err != nil {
-		logger.WithError(err).Fatal("加载配置文件失败")
+		return fmt.Errorf("加载配置文件失败: %w", err)
 	}
 
-	// 配置日志文件输出
-	if cfg.Log.File != "" {
-		// 创建日志文件
-		logFile, err := os.OpenFile(cfg.Log.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			logger.WithError(err).Fatal("无法创建日志文件")
-		}
-
-		// 同时输出到控制台和文件
-		mw := io.MultiWriter(os.Stdout, logFile)
-		logger.SetOutput(mw)
+	// 使用新的日志配置系统
+	logger, err := util.SetupLogger(cfg, logLevel)
+	if err != nil {
+		return fmt.Errorf("设置日志配置失败: %w", err)
 	}
 
 	// 创建系统服务
@@ -156,13 +120,16 @@ func runMain(cmd *cobra.Command, args []string) error {
 		logger.WithError(err).Fatal("启动HTTP管理服务失败")
 	}
 
+	// 获取日志配置信息
+	logConfigInfo := util.GetLogConfigInfo(cfg, logLevel)
+
 	// 打印启动信息
 	logger.WithFields(logrus.Fields{
 		"config_file":   configFile,
-		"log_level":     logLevel,
 		"port_range":    fmt.Sprintf("%d-%d", cfg.PortRange.Start, cfg.PortRange.End),
 		"admin_port":    adminServer.GetPort(),
 		"nat_traversal": cfg.NATTraversal.Enabled,
+		"log_config":    logConfigInfo,
 	}).Info("自动UPnP服务已启动")
 
 	// 等待中断信号

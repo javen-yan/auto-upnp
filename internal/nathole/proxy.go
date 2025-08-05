@@ -328,12 +328,20 @@ func (h *BaseProxyHandler) GetContext() interface{} {
 // NAT2ProxyHandler NAT2专用的代理处理器
 type NAT2ProxyHandler struct {
 	*BaseProxyHandler
+	// 共享的已连接主机记录
+	sharedConnectedHosts map[string]bool
+	sharedHostMutex      *sync.RWMutex
+	// NAT2模式：0=严格模式，1=宽松模式，2=学习模式
+	nat2Mode int
 }
 
-// NewNAT2ProxyHandler 创建NAT2代理处理器
-func NewNAT2ProxyHandler(logger *logrus.Logger, ctx interface{}) *NAT2ProxyHandler {
+// NewNAT2ProxyHandlerWithSharedHosts 创建带有共享主机记录的NAT2代理处理器
+func NewNAT2ProxyHandlerWithSharedHosts(logger *logrus.Logger, ctx interface{}, sharedHosts map[string]bool, sharedMutex *sync.RWMutex, nat2Mode int) *NAT2ProxyHandler {
 	return &NAT2ProxyHandler{
-		BaseProxyHandler: NewBaseProxyHandler(logger, ctx),
+		BaseProxyHandler:     NewBaseProxyHandler(logger, ctx),
+		sharedConnectedHosts: sharedHosts,
+		sharedHostMutex:      sharedMutex,
+		nat2Mode:             nat2Mode, // 默认使用宽松模式
 	}
 }
 
@@ -348,10 +356,49 @@ func (h *NAT2ProxyHandler) IsConnectionAllowed(conn net.Conn) bool {
 			return true
 		}
 
-		h.hostMutex.RLock()
-		defer h.hostMutex.RUnlock()
+		// NAT2模式检查
+		switch h.nat2Mode {
+		case 0: // 严格模式：只允许已记录的主机
+			// 检查本地记录
+			h.hostMutex.RLock()
+			localAllowed := h.connectedHosts[host]
+			h.hostMutex.RUnlock()
 
-		return h.connectedHosts[host]
+			if localAllowed {
+				return true
+			}
+
+			// 检查共享记录（如果存在）
+			if h.sharedConnectedHosts != nil && h.sharedHostMutex != nil {
+				h.sharedHostMutex.RLock()
+				sharedAllowed := h.sharedConnectedHosts[host]
+				h.sharedHostMutex.RUnlock()
+
+				if sharedAllowed {
+					return true
+				}
+			}
+			return false
+
+		case 1: // 宽松模式：允许所有外部连接
+			return true
+
+		case 2: // 学习模式：允许连接并记录
+			// 记录这个新连接
+			h.hostMutex.Lock()
+			h.connectedHosts[host] = true
+			h.hostMutex.Unlock()
+
+			// 更新共享记录（如果存在）
+			if h.sharedConnectedHosts != nil && h.sharedHostMutex != nil {
+				h.sharedHostMutex.Lock()
+				h.sharedConnectedHosts[host] = true
+				h.sharedHostMutex.Unlock()
+			}
+			return true
+		}
+
+		return false
 	}
 	return false
 }
@@ -366,10 +413,49 @@ func (h *NAT2ProxyHandler) IsUDPConnectionAllowed(remoteAddr net.Addr) bool {
 			return true
 		}
 
-		h.hostMutex.RLock()
-		defer h.hostMutex.RUnlock()
+		// NAT2模式检查
+		switch h.nat2Mode {
+		case 0: // 严格模式：只允许已记录的主机
+			// 检查本地记录
+			h.hostMutex.RLock()
+			localAllowed := h.connectedHosts[host]
+			h.hostMutex.RUnlock()
 
-		return h.connectedHosts[host]
+			if localAllowed {
+				return true
+			}
+
+			// 检查共享记录（如果存在）
+			if h.sharedConnectedHosts != nil && h.sharedHostMutex != nil {
+				h.sharedHostMutex.RLock()
+				sharedAllowed := h.sharedConnectedHosts[host]
+				h.sharedHostMutex.RUnlock()
+
+				if sharedAllowed {
+					return true
+				}
+			}
+			return false
+
+		case 1: // 宽松模式：允许所有外部连接
+			return true
+
+		case 2: // 学习模式：允许连接并记录
+			// 记录这个新连接
+			h.hostMutex.Lock()
+			h.connectedHosts[host] = true
+			h.hostMutex.Unlock()
+
+			// 更新共享记录（如果存在）
+			if h.sharedConnectedHosts != nil && h.sharedHostMutex != nil {
+				h.sharedHostMutex.Lock()
+				h.sharedConnectedHosts[host] = true
+				h.sharedHostMutex.Unlock()
+			}
+			return true
+		}
+
+		return false
 	}
 	return false
 }
@@ -380,10 +466,17 @@ func (h *NAT2ProxyHandler) RecordConnection(conn net.Conn) {
 	if tcpAddr, ok := remoteAddr.(*net.TCPAddr); ok {
 		host := tcpAddr.IP.String()
 
+		// 更新本地记录
 		h.hostMutex.Lock()
-		defer h.hostMutex.Unlock()
-
 		h.connectedHosts[host] = true
+		h.hostMutex.Unlock()
+
+		// 更新共享记录（如果存在）
+		if h.sharedConnectedHosts != nil && h.sharedHostMutex != nil {
+			h.sharedHostMutex.Lock()
+			h.sharedConnectedHosts[host] = true
+			h.sharedHostMutex.Unlock()
+		}
 	}
 }
 
@@ -392,10 +485,17 @@ func (h *NAT2ProxyHandler) RecordUDPConnection(remoteAddr net.Addr) {
 	if udpAddr, ok := remoteAddr.(*net.UDPAddr); ok {
 		host := udpAddr.IP.String()
 
+		// 更新本地记录
 		h.hostMutex.Lock()
-		defer h.hostMutex.Unlock()
-
 		h.connectedHosts[host] = true
+		h.hostMutex.Unlock()
+
+		// 更新共享记录（如果存在）
+		if h.sharedConnectedHosts != nil && h.sharedHostMutex != nil {
+			h.sharedHostMutex.Lock()
+			h.sharedConnectedHosts[host] = true
+			h.sharedHostMutex.Unlock()
+		}
 	}
 }
 

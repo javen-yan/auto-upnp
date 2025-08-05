@@ -10,7 +10,6 @@ import (
 type Config struct {
 	PortRange    PortRangeConfig    `mapstructure:"port_range"`
 	UPnP         UPnPConfig         `mapstructure:"upnp"`
-	Network      NetworkConfig      `mapstructure:"network"`
 	Log          LogConfig          `mapstructure:"log"`
 	Monitor      MonitorConfig      `mapstructure:"monitor"`
 	Admin        AdminConfig        `mapstructure:"admin"`
@@ -26,6 +25,7 @@ type PortRangeConfig struct {
 
 // UPnPConfig UPnP配置
 type UPnPConfig struct {
+	Enabled             bool          `mapstructure:"enabled"`
 	DiscoveryTimeout    time.Duration `mapstructure:"discovery_timeout"`
 	MappingDuration     time.Duration `mapstructure:"mapping_duration"`
 	RetryAttempts       int           `mapstructure:"retry_attempts"`
@@ -33,12 +33,6 @@ type UPnPConfig struct {
 	HealthCheckInterval time.Duration `mapstructure:"health_check_interval"`
 	MaxFailCount        int           `mapstructure:"max_fail_count"`
 	KeepAliveInterval   time.Duration `mapstructure:"keep_alive_interval"`
-}
-
-// NetworkConfig 网络配置
-type NetworkConfig struct {
-	PreferredInterfaces []string `mapstructure:"preferred_interfaces"`
-	ExcludeInterfaces   []string `mapstructure:"exclude_interfaces"`
 }
 
 // LogConfig 日志配置
@@ -69,6 +63,7 @@ type AdminConfig struct {
 type NATTraversalConfig struct {
 	Enabled     bool     `mapstructure:"enabled"`
 	STUNServers []string `mapstructure:"stun_servers"`
+	NAT2Mode    int      `mapstructure:"nat2_mode"`
 }
 
 // LoadConfig 加载配置文件
@@ -99,6 +94,7 @@ func setDefaults() {
 	viper.SetDefault("port_range.step", 1)
 
 	// UPnP默认值
+	viper.SetDefault("upnp.enabled", true)
 	viper.SetDefault("upnp.discovery_timeout", 10)
 	viper.SetDefault("upnp.mapping_duration", "1h")
 	viper.SetDefault("upnp.retry_attempts", 3)
@@ -106,10 +102,6 @@ func setDefaults() {
 	viper.SetDefault("upnp.health_check_interval", "30s")
 	viper.SetDefault("upnp.max_fail_count", 3)
 	viper.SetDefault("upnp.keep_alive_interval", "1m")
-
-	// 网络默认值
-	viper.SetDefault("network.preferred_interfaces", []string{"eth0", "wlan0"})
-	viper.SetDefault("network.exclude_interfaces", []string{"lo", "docker"})
 
 	// 日志默认值
 	viper.SetDefault("log.level", "info")
@@ -137,6 +129,7 @@ func setDefaults() {
 		"stun.hitv.com:3478",
 		"stun.cdnbye.com:3478",
 	})
+	viper.SetDefault("nat_traversal.nat2_mode", 1)
 }
 
 // GetPortRange 获取端口范围列表

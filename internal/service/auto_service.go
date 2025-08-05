@@ -62,14 +62,17 @@ func (as *AutoUPnPService) Start() error {
 		"keep_alive_interval":   as.config.UPnP.KeepAliveInterval,
 	}
 
-	upnpProvider := portmapping.NewUPnPProvider(as.logger, upnpConfig)
-	as.portMappingManager.AddProvider(upnpProvider)
+	if as.config.UPnP.Enabled {
+		upnpProvider := portmapping.NewUPnPProvider(as.logger, upnpConfig)
+		as.portMappingManager.AddProvider(upnpProvider)
+	}
 
 	// 如果启用NAT穿透，创建并添加NAT
 	if as.config.NATTraversal.Enabled {
 		natConfig := map[string]interface{}{
 			"stun_servers":   as.config.NATTraversal.STUNServers,
 			"system_natinfo": SystemServiceInstance.NatInfo,
+			"nat2_mode":      as.config.NATTraversal.NAT2Mode,
 		}
 		natProvider := portmapping.NewNATProvider(as.logger, natConfig)
 		as.portMappingManager.AddProvider(natProvider)

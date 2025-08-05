@@ -204,11 +204,6 @@ upnp:
   max_fail_count: 3         # 最大失败次数
   keep_alive_interval: 2m   # 保活间隔
 
-# 网络接口配置
-network:
-  preferred_interfaces: ["eth0", "wlan0"]  # 优先使用的网络接口
-  exclude_interfaces: ["lo", "docker"]     # 排除的网络接口
-
 # 日志配置
 log:
   level: "info"
@@ -220,8 +215,8 @@ log:
 # NAT穿透配置
 nat_traversal:
   enabled: false
+  nat2_mode: 1
   stun_servers:
-    - stun.ealine.cn:3478
     - stun.miwifi.com:3478
     - stun.chat.bilibili.com:3478
     - stun.hitv.com:3478
